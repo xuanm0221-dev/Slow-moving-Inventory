@@ -161,7 +161,10 @@ export default function StockWeeksSummary({
         inventory = warehouseStockCore;
         break;
       case "warehouse_outlet":
-        weeks = calculateWeeks(warehouseStockOutlet, totalSalesOutlet, days);
+        // 창고재고 아울렛: 직영판매(OR_sales)만 사용 (대리상판매 제외)
+        // OR_sales_outlet은 원 단위이므로 M 단위로 변환
+        const orSalesOutletM = orSalesOutlet / 1_000_000;
+        weeks = calculateWeeks(warehouseStockOutlet, orSalesOutletM, days);
         inventory = warehouseStockOutlet;
         break;
     }

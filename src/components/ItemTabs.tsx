@@ -1,6 +1,6 @@
 "use client";
 
-import { ItemTab, ITEM_TABS, Brand, BRANDS, ChannelTab, CHANNEL_TABS } from "@/types/sales";
+import { ItemTab, ITEM_TABS, Brand, BRANDS } from "@/types/sales";
 import { cn } from "@/lib/utils";
 
 interface ItemTabsProps {
@@ -10,9 +10,6 @@ interface ItemTabsProps {
   // 모두비교 모드
   showAllItems: boolean;
   setShowAllItems: (show: boolean) => void;
-  // 채널 탭
-  channelTab: ChannelTab;
-  setChannelTab: (tab: ChannelTab) => void;
 }
 
 export default function ItemTabs({ 
@@ -21,8 +18,6 @@ export default function ItemTabs({
   brand,
   showAllItems,
   setShowAllItems,
-  channelTab,
-  setChannelTab,
 }: ItemTabsProps) {
   // 현재 브랜드의 색상 정보 가져오기
   const brandInfo = BRANDS.find(b => b.key === brand);
@@ -33,12 +28,6 @@ export default function ItemTabs({
     Headwear: { icon: "🧢", label: "모자" },
     Bag: { icon: "👜", label: "가방" },
     Acc_etc: { icon: "⭐", label: "기타악세" },
-  };
-
-  const channelLabels: Record<ChannelTab, string> = {
-    ALL: "ALL",
-    FRS: "대리상",
-    창고: "창고",
   };
 
   return (
@@ -74,25 +63,6 @@ export default function ItemTabs({
         <span>📊</span>
         <span>재고주수 한번에 보기</span>
       </button>
-
-      {/* 구분선 */}
-      <div className="h-8 w-px bg-gray-300 mx-1" />
-
-      {/* 채널 탭 (ALL, 대리상, 창고) */}
-      {CHANNEL_TABS.map((tab) => (
-        <button
-          key={tab}
-          onClick={() => setChannelTab(tab)}
-          className={cn(
-            "px-3 py-2 rounded-lg font-medium text-sm transition-all duration-200",
-            channelTab === tab
-              ? "bg-gray-700 text-white"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-          )}
-        >
-          {channelLabels[tab]}
-        </button>
-      ))}
     </div>
   );
 }

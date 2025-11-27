@@ -29,8 +29,8 @@ const STOCK_WEEKS_ROWS = [
   { label: "ㄴ 주력상품", isHeader: false, indent: true, type: "frs_core", hasHeatmap: true },
   { label: "ㄴ 아울렛상품", isHeader: false, indent: true, type: "frs_outlet", hasHeatmap: true },
   { label: "창고재고주수", isHeader: true, indent: false, type: "warehouse", hasHeatmap: false },
-  { label: "ㄴ 주력상품", isHeader: false, indent: true, type: "warehouse_core", hasHeatmap: true },
-  { label: "ㄴ 아울렛상품", isHeader: false, indent: true, type: "warehouse_outlet", hasHeatmap: true },
+  { label: "ㄴ 주력상품", isHeader: false, indent: true, type: "warehouse_core", hasHeatmap: false },
+  { label: "ㄴ 아울렛상품", isHeader: false, indent: true, type: "warehouse_outlet", hasHeatmap: false },
 ];
 
 // 히트맵 색상 결정 함수 (인라인 스타일 - Tailwind purge 방지)
@@ -141,7 +141,10 @@ export default function StockWeeksTable({
       case "warehouse_core":
         return calculateWeeks(warehouseStockCore, totalSalesCore, days);
       case "warehouse_outlet":
-        return calculateWeeks(warehouseStockOutlet, totalSalesOutlet, days);
+        // 창고재고 아울렛: 직영판매(OR_sales)만 사용 (대리상판매 제외)
+        // OR_sales_outlet은 원 단위이므로 M 단위로 변환
+        const orSalesOutletM = orSalesOutlet / 1_000_000;
+        return calculateWeeks(warehouseStockOutlet, orSalesOutletM, days);
 
       default:
         return { display: "-", value: -1 };

@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import {
   ComposedChart,
   Bar,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -15,14 +14,20 @@ import {
 import { 
   ItemTab,
   ChannelTab,
+  CHANNEL_TABS,
   InventoryBrandData,
+  SalesBrandData,
   InventoryMonthData,
+  SalesMonthData,
 } from "@/types/sales";
+import { cn } from "@/lib/utils";
 
 interface InventoryChartProps {
   selectedTab: ItemTab;
   inventoryBrandData: InventoryBrandData;
+  salesBrandData: SalesBrandData;
   channelTab: ChannelTab;
+  setChannelTab: (tab: ChannelTab) => void;
 }
 
 // 월 목록
@@ -59,7 +64,9 @@ const CHANNEL_LABELS: Record<ChannelTab, string> = {
 export default function InventoryChart({
   selectedTab,
   inventoryBrandData,
+  salesBrandData,
   channelTab,
+  setChannelTab,
 }: InventoryChartProps) {
   // 채널별 재고 데이터 가져오기
   const getChannelInventory = (invData: InventoryMonthData | undefined) => {
@@ -88,39 +95,70 @@ export default function InventoryChart({
         };
     }
   };
-  // 차트 데이터 생성 (채널별)
+
+  // 채널별 판매매출 데이터 가져오기
+  const getChannelSales = (slsData: SalesMonthData | undefined) => {
+    if (!slsData) return { core: 0, outlet: 0 };
+
+    switch (channelTab) {
+      case "FRS":
+        return {
+          core: Math.round(slsData.FRS_core || 0),
+          outlet: Math.round(slsData.FRS_outlet || 0),
+        };
+      case "창고":
+        // 창고는 전체 판매로 표시
+        return {
+          core: Math.round(slsData.전체_core || 0),
+          outlet: Math.round(slsData.전체_outlet || 0),
+        };
+      case "ALL":
+      default:
+        return {
+          core: Math.round(slsData.전체_core || 0),
+          outlet: Math.round(slsData.전체_outlet || 0),
+        };
+    }
+  };
+  // 차트 데이터 생성 (24년 막대 = 25년 판매매출, 25년 막대 = 25년 재고자산)
   const chartData = useMemo(() => {
     return MONTHS.map((monthNum) => {
-      const month2024 = `2024.${monthNum}`;
       const month2025 = `2025.${monthNum}`;
       
-      const invData2024 = inventoryBrandData[selectedTab]?.[month2024];
       const invData2025 = inventoryBrandData[selectedTab]?.[month2025];
+      const slsData2025 = salesBrandData[selectedTab]?.[month2025];
 
-      // 채널별 데이터 가져오기
-      const prev = getChannelInventory(invData2024);
-      const curr = getChannelInventory(invData2025);
-
-      // 24년 데이터
-      const prev_total = prev.core + prev.outlet;
+      // 24년 막대: 25년 판매매출 (채널별)
+      const prev = getChannelSales(slsData2025);
       
-      // 25년 데이터
-      const curr_total = curr.core + curr.outlet;
-
-      // YOY 계산 (당년/전년 * 100) - 데이터가 없는 월은 null
-      const hasData = invData2024 && invData2025 && prev_total > 0 && curr_total > 0;
-      const yoy = hasData ? Math.round((curr_total / prev_total) * 100) : null;
+      // 25년 막대: 25년 재고자산 (채널별)
+      const curr = getChannelInventory(invData2025);
 
       return {
         month: `${parseInt(monthNum)}월`,
-        "24년_주력": prev.core,
-        "24년_아울렛": prev.outlet,
-        "25년_주력": curr.core,
-        "25년_아울렛": curr.outlet,
-        "YOY": yoy,
+        "0_재고자산_주력": curr.core,  // 25년 재고자산 주력 (먼저 표시) - 숫자 접두사로 순서 보장
+        "0_재고자산_아울렛": curr.outlet,  // 25년 재고자산 아울렛
+        "1_판매매출_주력": prev.core,  // 25년 판매매출 주력 (나중 표시)
+        "1_판매매출_아울렛": prev.outlet,  // 25년 판매매출 아울렛
       };
     });
-  }, [inventoryBrandData, selectedTab, channelTab]);
+  }, [inventoryBrandData, salesBrandData, selectedTab, channelTab]);
+
+  // 판매매출 최대값 계산 (동적 Y축 범위 설정용)
+  const maxSales = useMemo(() => {
+    let max = 0;
+    MONTHS.forEach((monthNum) => {
+      const month2025 = `2025.${monthNum}`;
+      const slsData2025 = salesBrandData[selectedTab]?.[month2025];
+      if (slsData2025) {
+        const sales = getChannelSales(slsData2025);
+        const total = sales.core + sales.outlet;
+        if (total > max) max = total;
+      }
+    });
+    // 최대값의 1.3배로 설정 (여유 공간 확보), 최소 100M
+    return Math.max(Math.ceil(max * 1.3), 100);
+  }, [salesBrandData, selectedTab, channelTab]);
 
   const itemLabel = ITEM_LABELS[selectedTab];
   const channelLabel = CHANNEL_LABELS[channelTab];
@@ -133,11 +171,29 @@ export default function InventoryChart({
   return (
     <div className="card mb-4">
       {/* 헤더 */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+      <div className="flex flex-wrap items-center gap-4 mb-4">
         <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
           <span className="text-green-500">📊</span>
           월별 {channelLabel} 재고자산 추이 ({itemLabel}) - 24년 vs 25년
         </h2>
+        
+        {/* 채널 탭 (ALL, 대리상, 창고) - 제목 바로 옆 */}
+        <div className="flex flex-wrap items-center gap-2">
+          {CHANNEL_TABS.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setChannelTab(tab)}
+              className={cn(
+                "px-3 py-2 rounded-lg font-medium text-sm transition-all duration-200",
+                channelTab === tab
+                  ? "bg-gray-700 text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              )}
+            >
+              {CHANNEL_LABELS[tab]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 차트 */}
@@ -167,19 +223,19 @@ export default function InventoryChart({
                 style: { fontSize: 12, fill: "#6b7280" }
               }}
             />
-            {/* 오른쪽 Y축: YOY (%) */}
+            {/* 오른쪽 Y축: 판매매출 (M) - 동적 범위 */}
             <YAxis 
               yAxisId="right"
               orientation="right"
-              tick={{ fontSize: 12, fill: "#DC2626" }}
-              axisLine={{ stroke: "#DC2626" }}
-              tickFormatter={(value) => `${value}%`}
-              domain={[50, 150]}
+              tick={{ fontSize: 12, fill: "#6B7280" }}
+              axisLine={{ stroke: "#6B7280" }}
+              tickFormatter={formatYAxis}
+              domain={[0, maxSales]}  // 아이템별 판매매출 최대값에 맞춰 동적 조정
               label={{ 
-                value: "YOY (%)", 
+                value: "판매매출 (M)", 
                 angle: 90, 
                 position: "insideRight",
-                style: { fontSize: 12, fill: "#DC2626" }
+                style: { fontSize: 12, fill: "#6B7280" }
               }}
             />
             <Tooltip 
@@ -190,9 +246,6 @@ export default function InventoryChart({
                 fontSize: "12px"
               }}
               formatter={(value: number, name: string) => {
-                if (name === "YOY") {
-                  return value !== null ? [`${value}%`, "YOY"] : ["-", "YOY"];
-                }
                 const formattedValue = value.toLocaleString() + "M";
                 return [formattedValue, name];
               }}
@@ -200,47 +253,35 @@ export default function InventoryChart({
             <Legend 
               wrapperStyle={{ fontSize: "12px" }}
             />
-            {/* 24년 막대 (주력 + 아울렛 스택) */}
+            {/* 25년 재고자산 막대 (주력 + 아울렛 스택) - 먼저 표시 */}
             <Bar 
               yAxisId="left"
-              dataKey="24년_주력" 
-              stackId="2024" 
-              fill={COLORS.prev_core}
-              name="24년 주력"
-            />
-            <Bar 
-              yAxisId="left"
-              dataKey="24년_아울렛" 
-              stackId="2024" 
-              fill={COLORS.prev_outlet}
-              name="24년 아울렛"
-            />
-            {/* 25년 막대 (주력 + 아울렛 스택) */}
-            <Bar 
-              yAxisId="left"
-              dataKey="25년_주력" 
-              stackId="2025" 
+              dataKey="0_재고자산_주력" 
+              stackId="inventory" 
               fill={COLORS.curr_core}
-              name="25년 주력"
+              name="25년 재고자산 주력"
             />
             <Bar 
               yAxisId="left"
-              dataKey="25년_아울렛" 
-              stackId="2025" 
+              dataKey="0_재고자산_아울렛" 
+              stackId="inventory" 
               fill={COLORS.curr_outlet}
-              name="25년 아울렛"
+              name="25년 재고자산 아울렛"
             />
-            {/* YOY 꺾은선 */}
-            <Line
+            {/* 25년 판매매출 막대 (주력 + 아울렛 스택) - 나중에 표시, 오른쪽 Y축 사용 */}
+            <Bar 
               yAxisId="right"
-              type="monotone"
-              dataKey="YOY"
-              name="YOY"
-              stroke={COLORS.yoy}
-              strokeWidth={2}
-              dot={{ fill: COLORS.yoy, strokeWidth: 2, r: 4 }}
-              activeDot={{ r: 6 }}
-              connectNulls
+              dataKey="1_판매매출_주력" 
+              stackId="sales" 
+              fill={COLORS.prev_core}
+              name="25년 판매매출 주력"
+            />
+            <Bar 
+              yAxisId="right"
+              dataKey="1_판매매출_아울렛" 
+              stackId="sales" 
+              fill={COLORS.prev_outlet}
+              name="25년 판매매출 아울렛"
             />
           </ComposedChart>
         </ResponsiveContainer>
@@ -250,7 +291,7 @@ export default function InventoryChart({
       <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
         <div className="flex flex-wrap items-center gap-6 text-xs text-gray-600">
           <div className="flex items-center gap-3">
-            <span className="font-medium">24년:</span>
+            <span className="font-medium">25년 판매매출:</span>
             <div className="flex items-center gap-1">
               <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.prev_core }}></span>
               <span>주력</span>
@@ -261,7 +302,7 @@ export default function InventoryChart({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="font-medium">25년:</span>
+            <span className="font-medium">25년 재고자산:</span>
             <div className="flex items-center gap-1">
               <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.curr_core }}></span>
               <span>주력</span>
@@ -269,13 +310,6 @@ export default function InventoryChart({
             <div className="flex items-center gap-1">
               <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.curr_outlet }}></span>
               <span>아울렛</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="font-medium text-red-600">YOY:</span>
-            <div className="flex items-center gap-1">
-              <span className="w-4 h-0.5" style={{ backgroundColor: COLORS.yoy }}></span>
-              <span className="text-red-600">당년/전년 (%)</span>
             </div>
           </div>
         </div>

@@ -131,7 +131,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
               />
             )}
 
-            {/* 1. 아이템 탭 + 차트 모두선택 + 채널 탭 + Stock Week 입력 */}
+            {/* 1. 아이템 탭 + 차트 모두선택 + Stock Week 입력 */}
             <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
               <ItemTabs 
                 selectedTab={selectedTab} 
@@ -139,8 +139,6 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                 brand={brand}
                 showAllItems={showAllItemsInChart}
                 setShowAllItems={setShowAllItemsInChart}
-                channelTab={channelTab}
-                setChannelTab={setChannelTab}
               />
               <StockWeekInput value={stockWeek} onChange={setStockWeek} />
             </div>
@@ -161,11 +159,13 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
             )}
 
             {/* 1.6. 월별 재고자산 추이 막대차트 */}
-            {inventoryBrandData && (
+            {inventoryBrandData && salesBrandData && (
               <InventoryChart
                 selectedTab={selectedTab}
                 inventoryBrandData={inventoryBrandData}
+                salesBrandData={salesBrandData}
                 channelTab={channelTab}
+                setChannelTab={setChannelTab}
               />
             )}
 
@@ -198,7 +198,10 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                     </div>
                     <div>
                       <span className="text-gray-500">창고주수:</span>{" "}
-                      <span className="text-gray-600">창고재고 ÷ (전체판매 ÷ 일수 × 7)</span>
+                      <div className="text-gray-600 mt-1">
+                        <div>• 주력: 창고재고 ÷ (전체판매 ÷ 일수 × 7)</div>
+                        <div>• 아울렛: 창고재고 ÷ (직영판매 ÷ 일수 × 7)</div>
+                      </div>
                     </div>
                   </div>
                 </div>

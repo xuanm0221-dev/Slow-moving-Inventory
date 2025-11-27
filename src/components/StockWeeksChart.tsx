@@ -120,9 +120,11 @@ export default function StockWeeksChart({
         return {
           stockCore: Math.max(0, warehouseStockCore),
           stockOutlet: Math.max(0, warehouseStockOutlet),
-          // 창고 주수는 전체 판매로 계산
+          // 창고 주력: 전체 판매로 계산 (유지)
           salesCore: slsData.전체_core || 0,
-          salesOutlet: slsData.전체_outlet || 0,
+          // 창고 아울렛: 직영판매(OR_sales)만 사용 (대리상판매 제외)
+          // OR_sales_outlet은 원 단위이므로 M 단위로 변환
+          salesOutlet: (invData.OR_sales_outlet || 0) / 1_000_000,
         };
       case "ALL":
       default:
@@ -136,7 +138,7 @@ export default function StockWeeksChart({
     }
   };
 
-  // 단일 아이템 차트 데이터 생성 (채널별)
+  // 단일 아이템 차트 데이터 생성 (실선: 합계, 점선: 대리상)
   const singleItemChartData = useMemo(() => {
     return MONTHS_2025.map((month) => {
       const invData = inventoryData[month];
@@ -146,24 +148,30 @@ export default function StockWeeksChart({
       if (!invData || !slsData || !days) {
         return {
           month: month.replace("2025.", "") + "월",
-          주력상품: null,
-          아울렛상품: null,
+          합계: null,
+          대리상: null,
         };
       }
 
-      const channelData = getChannelData(invData, slsData, days);
-      const weeksCore = calculateWeeks(channelData.stockCore, channelData.salesCore, days);
-      const weeksOutlet = calculateWeeks(channelData.stockOutlet, channelData.salesOutlet, days);
+      // 실선: 합계 기준 (전체_core + 전체_outlet)
+      const totalStock = (invData.전체_core || 0) + (invData.전체_outlet || 0);
+      const totalSales = (slsData.전체_core || 0) + (slsData.전체_outlet || 0);
+      const weeksTotal = calculateWeeks(totalStock, totalSales, days);
+
+      // 점선: 대리상 기준 (FRS_core + FRS_outlet)
+      const frsStock = (invData.FRS_core || 0) + (invData.FRS_outlet || 0);
+      const frsSales = (slsData.FRS_core || 0) + (slsData.FRS_outlet || 0);
+      const weeksFRS = calculateWeeks(frsStock, frsSales, days);
 
       return {
         month: month.replace("2025.", "") + "월",
-        주력상품: weeksCore !== null ? parseFloat(weeksCore.toFixed(1)) : null,
-        아울렛상품: weeksOutlet !== null ? parseFloat(weeksOutlet.toFixed(1)) : null,
+        합계: weeksTotal !== null ? parseFloat(weeksTotal.toFixed(1)) : null,
+        대리상: weeksFRS !== null ? parseFloat(weeksFRS.toFixed(1)) : null,
       };
     });
-  }, [inventoryData, salesData, daysInMonth, channelTab, stockWeek]);
+  }, [inventoryData, salesData, daysInMonth]);
 
-  // 모든 아이템 차트 데이터 생성 (주력/아울렛 따로, 채널별)
+  // 모든 아이템 차트 데이터 생성 (실선: 합계, 점선: 대리상)
   const allItemsChartData = useMemo(() => {
     if (!showAllItems || !allInventoryData || !allSalesData) return [];
 
@@ -178,26 +186,27 @@ export default function StockWeeksChart({
         const slsData = allSalesData[itemTab]?.[month];
 
         if (!invData || !slsData || !days) {
-          dataPoint[`${ITEM_LABELS[itemTab]}_주력`] = null;
-          dataPoint[`${ITEM_LABELS[itemTab]}_아울렛`] = null;
+          dataPoint[`${ITEM_LABELS[itemTab]}_합계`] = null;
+          dataPoint[`${ITEM_LABELS[itemTab]}_대리상`] = null;
           return;
         }
 
-        // 채널별 데이터 가져오기
-        const channelData = getChannelData(invData, slsData, days);
-        
-        // 주력상품
-        const weeksCore = calculateWeeks(channelData.stockCore, channelData.salesCore, days);
-        dataPoint[`${ITEM_LABELS[itemTab]}_주력`] = weeksCore !== null ? parseFloat(weeksCore.toFixed(1)) : null;
+        // 실선: 합계 기준 (전체_core + 전체_outlet)
+        const totalStock = (invData.전체_core || 0) + (invData.전체_outlet || 0);
+        const totalSales = (slsData.전체_core || 0) + (slsData.전체_outlet || 0);
+        const weeksTotal = calculateWeeks(totalStock, totalSales, days);
+        dataPoint[`${ITEM_LABELS[itemTab]}_합계`] = weeksTotal !== null ? parseFloat(weeksTotal.toFixed(1)) : null;
 
-        // 아울렛상품
-        const weeksOutlet = calculateWeeks(channelData.stockOutlet, channelData.salesOutlet, days);
-        dataPoint[`${ITEM_LABELS[itemTab]}_아울렛`] = weeksOutlet !== null ? parseFloat(weeksOutlet.toFixed(1)) : null;
+        // 점선: 대리상 기준 (FRS_core + FRS_outlet)
+        const frsStock = (invData.FRS_core || 0) + (invData.FRS_outlet || 0);
+        const frsSales = (slsData.FRS_core || 0) + (slsData.FRS_outlet || 0);
+        const weeksFRS = calculateWeeks(frsStock, frsSales, days);
+        dataPoint[`${ITEM_LABELS[itemTab]}_대리상`] = weeksFRS !== null ? parseFloat(weeksFRS.toFixed(1)) : null;
       });
 
       return dataPoint;
     });
-  }, [showAllItems, allInventoryData, allSalesData, daysInMonth, channelTab, stockWeek]);
+  }, [showAllItems, allInventoryData, allSalesData, daysInMonth]);
 
   const colors = ITEM_COLORS[selectedTab];
   const itemLabel = ITEM_LABELS[selectedTab];
@@ -212,7 +221,7 @@ export default function StockWeeksChart({
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
             <span className="text-purple-500">📈</span>
-            2025년 월별 {channelLabel} 재고주수 추이 (전체 아이템 비교)
+            2025년 월별 재고주수 추이 (전체 아이템 비교)
           </h2>
         </div>
 
@@ -241,17 +250,44 @@ export default function StockWeeksChart({
                   borderRadius: "8px",
                   fontSize: "12px"
                 }}
-                formatter={(value: number) => value !== null ? `${value}주` : "-"}
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length) {
+                    // 합계를 먼저, 대리상을 나중에 표시
+                    const sortedPayload = [...payload].sort((a, b) => {
+                      const aKey = String(a.dataKey || "");
+                      const bKey = String(b.dataKey || "");
+                      if (aKey.includes("합계")) return -1;
+                      if (bKey.includes("합계")) return 1;
+                      return 0;
+                    });
+                    
+                    return (
+                      <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-lg">
+                        <p className="font-medium mb-1">{label}</p>
+                        {sortedPayload.map((entry, index) => {
+                          const dataKey = String(entry.dataKey || "");
+                          const label = dataKey.includes("합계") ? "합계" : dataKey.includes("대리상") ? "대리상" : dataKey;
+                          return (
+                            <p key={index} style={{ color: entry.color }}>
+                              {label}: {entry.value !== null ? `${entry.value}주` : "-"}
+                            </p>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
               />
               <Legend 
                 wrapperStyle={{ fontSize: "12px" }}
               />
               {ITEM_TABS.flatMap((itemTab) => [
                 <Line
-                  key={`${itemTab}_core`}
+                  key={`${itemTab}_total`}
                   type="monotone"
-                  dataKey={`${ITEM_LABELS[itemTab]}_주력`}
-                  name={`${ITEM_LABELS[itemTab]} 주력`}
+                  dataKey={`${ITEM_LABELS[itemTab]}_합계`}
+                  name={`${ITEM_LABELS[itemTab]} 합계`}
                   stroke={ITEM_COLORS[itemTab].core}
                   strokeWidth={3}
                   dot={{ fill: ITEM_COLORS[itemTab].core, strokeWidth: 2, r: 4 }}
@@ -259,10 +295,10 @@ export default function StockWeeksChart({
                   connectNulls
                 />,
                 <Line
-                  key={`${itemTab}_outlet`}
+                  key={`${itemTab}_frs`}
                   type="monotone"
-                  dataKey={`${ITEM_LABELS[itemTab]}_아울렛`}
-                  name={`${ITEM_LABELS[itemTab]} 아울렛`}
+                  dataKey={`${ITEM_LABELS[itemTab]}_대리상`}
+                  name={`${ITEM_LABELS[itemTab]} 대리상`}
                   stroke={ITEM_COLORS[itemTab].outlet}
                   strokeWidth={3}
                   strokeDasharray="5 5"
@@ -279,8 +315,8 @@ export default function StockWeeksChart({
         <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
           <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600">
             <span className="font-medium">라인 스타일:</span>
-            <span>실선 = 주력상품</span>
-            <span>점선 = 아울렛상품</span>
+            <span>실선 = 합계 기준</span>
+            <span>점선 = 대리상 기준</span>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600 mt-2">
             <span className="font-medium">아이템별 색상:</span>
@@ -301,10 +337,10 @@ export default function StockWeeksChart({
     <div className="card mb-4">
       {/* 헤더 */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-        <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-          <span className="text-purple-500">📈</span>
-          2025년 월별 {channelLabel} 재고주수 추이 ({itemLabel})
-        </h2>
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <span className="text-purple-500">📈</span>
+            2025년 월별 재고주수 추이 ({itemLabel})
+          </h2>
       </div>
 
       {/* 차트 */}
@@ -332,14 +368,41 @@ export default function StockWeeksChart({
                 borderRadius: "8px",
                 fontSize: "12px"
               }}
-              formatter={(value: number) => value !== null ? `${value}주` : "-"}
+              content={({ active, payload, label }) => {
+                if (active && payload && payload.length) {
+                  // 합계를 먼저, 대리상을 나중에 표시
+                  const sortedPayload = [...payload].sort((a, b) => {
+                    const aKey = String(a.dataKey || "");
+                    const bKey = String(b.dataKey || "");
+                    if (aKey === "합계") return -1;
+                    if (bKey === "합계") return 1;
+                    return 0;
+                  });
+                  
+                  return (
+                    <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-lg">
+                      <p className="font-medium mb-1">{label}</p>
+                      {sortedPayload.map((entry, index) => {
+                        const dataKey = String(entry.dataKey || "");
+                        const labelText = dataKey === "합계" ? "합계" : "대리상";
+                        return (
+                          <p key={index} style={{ color: entry.color }}>
+                            {labelText}: {entry.value !== null ? `${entry.value}주` : "-"}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+                return null;
+              }}
             />
             <Legend 
               wrapperStyle={{ fontSize: "12px" }}
             />
             <Line
               type="monotone"
-              dataKey="주력상품"
+              dataKey="합계"
               stroke={colors.core}
               strokeWidth={3}
               dot={{ fill: colors.core, strokeWidth: 2, r: 4 }}
@@ -348,7 +411,7 @@ export default function StockWeeksChart({
             />
             <Line
               type="monotone"
-              dataKey="아울렛상품"
+              dataKey="대리상"
               stroke={colors.outlet}
               strokeWidth={3}
               strokeDasharray="5 5"
@@ -366,11 +429,11 @@ export default function StockWeeksChart({
           <span className="font-medium">라인 스타일:</span>
           <div className="flex items-center gap-1">
             <span className="w-6 h-0.5" style={{ backgroundColor: colors.core }}></span>
-            <span>주력상품 (실선)</span>
+            <span>합계 기준 (실선)</span>
           </div>
           <div className="flex items-center gap-1">
             <span className="w-6 h-0.5 border-dashed border-t-2" style={{ borderColor: colors.outlet }}></span>
-            <span>아울렛상품 (점선)</span>
+            <span>대리상 기준 (점선)</span>
           </div>
         </div>
       </div>
