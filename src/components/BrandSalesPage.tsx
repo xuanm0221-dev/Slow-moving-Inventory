@@ -9,7 +9,8 @@ import {
   ChannelTab,
   SalesSummaryData, 
   InventorySummaryData,
-  DEFAULT_STOCK_WEEK 
+  StockWeeksByItem,
+  createDefaultStockWeeks
 } from "@/types/sales";
 import Navigation from "./Navigation";
 import ItemTabs from "./ItemTabs";
@@ -34,9 +35,17 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
   const [inventoryData, setInventoryData] = useState<InventorySummaryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [stockWeek, setStockWeek] = useState<number>(DEFAULT_STOCK_WEEK);
+  const [stockWeeks, setStockWeeks] = useState<StockWeeksByItem>(createDefaultStockWeeks());
   const [showAllItemsInChart, setShowAllItemsInChart] = useState(false); // 차트 모두선택 모드
   const [channelTab, setChannelTab] = useState<ChannelTab>("ALL"); // 채널 탭 (ALL, FRS, 창고)
+  
+  // 특정 아이템의 stockWeek 변경 핸들러
+  const handleStockWeekChange = (itemTab: ItemTab, value: number) => {
+    setStockWeeks(prev => ({
+      ...prev,
+      [itemTab]: value
+    }));
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -127,11 +136,12 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                 inventoryBrandData={inventoryBrandData}
                 salesBrandData={salesBrandData}
                 daysInMonth={inventoryData.daysInMonth}
-                stockWeek={stockWeek}
+                stockWeeks={stockWeeks}
+                onStockWeekChange={handleStockWeekChange}
               />
             )}
 
-            {/* 1. 아이템 탭 + 차트 모두선택 + Stock Week 입력 */}
+            {/* 1. 아이템 탭 + 차트 모두선택 */}
             <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
               <ItemTabs 
                 selectedTab={selectedTab} 
@@ -140,7 +150,6 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                 showAllItems={showAllItemsInChart}
                 setShowAllItems={setShowAllItemsInChart}
               />
-              <StockWeekInput value={stockWeek} onChange={setStockWeek} />
             </div>
 
             {/* 1.5. 월별 재고주수 추이 차트 */}
@@ -150,7 +159,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                 inventoryData={inventoryTabData}
                 salesData={salesTabData}
                 daysInMonth={inventoryData.daysInMonth}
-                stockWeek={stockWeek}
+                stockWeek={stockWeeks[selectedTab]}
                 showAllItems={showAllItemsInChart}
                 allInventoryData={inventoryBrandData}
                 allSalesData={salesBrandData}
@@ -180,7 +189,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                   inventoryData={inventoryTabData}
                   salesData={salesTabData}
                   daysInMonth={inventoryData.daysInMonth}
-                  stockWeek={stockWeek}
+                  stockWeek={stockWeeks[selectedTab]}
                   year="2025"
                 />
 
@@ -234,7 +243,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                   inventoryData={inventoryTabData}
                   salesData={salesTabData}
                   daysInMonth={inventoryData.daysInMonth}
-                  stockWeek={stockWeek}
+                  stockWeek={stockWeeks[selectedTab]}
                   year="2024"
                 />
               </div>
@@ -277,7 +286,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                   <>
                     <span><span className="text-gray-400">전체재고:</span> FRS + HQ + OR</span>
                     <span><span className="text-gray-400">본사재고:</span> HQ + OR</span>
-                    <span><span className="text-gray-400">직영재고:</span> OR판매 ÷ 일수 × 7 × {stockWeek}주</span>
+                    <span><span className="text-gray-400">직영재고:</span> OR판매 ÷ 일수 × 7 × {stockWeeks[selectedTab]}주</span>
                     <span><span className="text-gray-400">본사물류재고:</span> 본사재고 - 직영재고</span>
                   </>
                 }
@@ -287,7 +296,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                     data={inventoryTabData} 
                     months={inventoryData.months}
                     daysInMonth={inventoryData.daysInMonth}
-                    stockWeek={stockWeek}
+                    stockWeek={stockWeeks[selectedTab]}
                   />
                 ) : (
                   <div className="flex items-center justify-center py-10">

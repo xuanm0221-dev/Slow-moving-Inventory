@@ -181,3 +181,15 @@ export const BRANDS: {
 
 // 기본 stock_week 값
 export const DEFAULT_STOCK_WEEK = 25;
+
+// 아이템별 stockWeek 타입
+export type StockWeeksByItem = Record<ItemTab, number>;
+
+// 아이템별 stockWeek 기본값 생성 함수
+export const createDefaultStockWeeks = (): StockWeeksByItem => ({
+  전체: DEFAULT_STOCK_WEEK,
+  Shoes: DEFAULT_STOCK_WEEK,
+  Headwear: DEFAULT_STOCK_WEEK,
+  Bag: DEFAULT_STOCK_WEEK,
+  Acc_etc: DEFAULT_STOCK_WEEK,
+});

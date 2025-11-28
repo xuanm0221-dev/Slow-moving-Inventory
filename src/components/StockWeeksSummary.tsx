@@ -8,7 +8,8 @@ import {
   InventoryBrandData, 
   SalesBrandData,
   InventoryItemTabData,
-  SalesItemTabData 
+  SalesItemTabData,
+  StockWeeksByItem
 } from "@/types/sales";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,8 @@ interface StockWeeksSummaryProps {
   inventoryBrandData: InventoryBrandData;
   salesBrandData: SalesBrandData;
   daysInMonth: { [month: string]: number };
-  stockWeek: number;
+  stockWeeks: StockWeeksByItem;
+  onStockWeekChange: (itemTab: ItemTab, value: number) => void;
 }
 
 // 아이템 탭 라벨 및 아이콘
@@ -39,6 +41,7 @@ const BRAND_LIGHT_COLORS: Record<Brand, string> = {
 // Summary 행 정의 (새 구조: 전체 → 주력/아울렛 → 대리상/본사물류/직영)
 const SUMMARY_ROWS = [
   { label: "전체주수", level: 0, type: "total" },           // 헤더 level 0
+  { label: "(전년비)", level: 1, type: "total", isYoy: true },  // 전년비 행
   { label: "ㄴ 주력상품", level: 1, type: "total_core" },   // 헤더 level 1
   { label: "- 대리상", level: 2, type: "frs_core" },        // 상세 level 2
   { label: "- 본사물류", level: 2, type: "warehouse_core" },    // 상세 level 2
@@ -59,7 +62,8 @@ export default function StockWeeksSummary({
   inventoryBrandData,
   salesBrandData,
   daysInMonth,
-  stockWeek,
+  stockWeeks,
+  onStockWeekChange,
 }: StockWeeksSummaryProps) {
   // 가장 최근 데이터가 있는 월 찾기
   const getLatestMonth = (): string => {
@@ -85,9 +89,9 @@ export default function StockWeeksSummary({
   };
 
   // 직영재고 계산 함수
-  const calculateRetailStock = (orSales: number, days: number): number => {
+  const calculateRetailStock = (orSales: number, days: number, itemTab: ItemTab): number => {
     if (days === 0) return 0;
-    return (orSales / days) * 7 * stockWeek;
+    return (orSales / days) * 7 * stockWeeks[itemTab];
   };
 
   // 특정 아이템, 월, 행 타입에 대한 데이터 계산
@@ -114,8 +118,8 @@ export default function StockWeeksSummary({
     const orSalesCore = invData.OR_sales_core || 0;
     const orSalesOutlet = invData.OR_sales_outlet || 0;
 
-    const retailStockCore = calculateRetailStock(orSalesCore, days) / 1_000_000;
-    const retailStockOutlet = calculateRetailStock(orSalesOutlet, days) / 1_000_000;
+    const retailStockCore = calculateRetailStock(orSalesCore, days, itemTab) / 1_000_000;
+    const retailStockOutlet = calculateRetailStock(orSalesOutlet, days, itemTab) / 1_000_000;
 
     const warehouseStockCore = hqOrStockCore - retailStockCore;
     const warehouseStockOutlet = hqOrStockOutlet - retailStockOutlet;
@@ -170,8 +174,8 @@ export default function StockWeeksSummary({
         inventory = hqOrStockOutlet;
         break;
       case "retail_core":
-        // 직영 주수: stockWeek 값 그대로 사용 (계산 불필요)
-        weeks = stockWeek;
+        // 직영 주수: stockWeeks[itemTab] 값 그대로 사용 (계산 불필요)
+        weeks = stockWeeks[itemTab];
         // 직영 재고: 이미 계산된 retailStockCore 사용 (재고표와 동일)
         inventory = retailStockCore;
         break;
@@ -197,6 +201,15 @@ export default function StockWeeksSummary({
       return { text: `${yoy.toFixed(0)}%`, color: "text-red-500" };
     }
     return { text: `${yoy.toFixed(0)}%`, color: "text-blue-500" };
+  };
+
+  // 재고금액 증감 포맷팅
+  const formatInventoryDiff = (diff: number): { text: string; color: string } => {
+    if (diff === 0) return { text: "-", color: "text-gray-500" };
+    if (diff > 0) {
+      return { text: `+${formatWithComma(diff)}M`, color: "text-red-500" };
+    }
+    return { text: `△${formatWithComma(Math.abs(diff))}M`, color: "text-blue-500" };
   };
 
   // 전년 동월 계산
@@ -226,12 +239,51 @@ export default function StockWeeksSummary({
       >
         {/* 카드 헤더 */}
         <div 
-          className="px-3 py-2 border-b border-gray-200"
+          className="px-3 py-2 border-b border-gray-200 flex items-center justify-between"
           style={{ backgroundColor: isAllTab ? 'rgba(0,0,0,0.05)' : '#f9fafb' }}
         >
           <div className="flex items-center gap-1.5">
             <span className="text-base">{info.icon}</span>
             <span className="font-semibold text-gray-800 text-sm">{info.label}</span>
+          </div>
+          
+          {/* StockWeek 입력 (작은 버전) */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">stock week:</span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  const newValue = Math.max(0, stockWeeks[itemTab] - 1);
+                  onStockWeekChange(itemTab, newValue);
+                }}
+                className="w-6 h-6 flex items-center justify-center rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs transition-colors"
+              >
+                -
+              </button>
+              <input
+                type="number"
+                value={stockWeeks[itemTab]}
+                onChange={(e) => {
+                  const newValue = parseInt(e.target.value, 10);
+                  if (!isNaN(newValue) && newValue >= 0 && newValue <= 52) {
+                    onStockWeekChange(itemTab, newValue);
+                  }
+                }}
+                min={0}
+                max={52}
+                className="w-12 h-6 text-center bg-white border border-gray-300 rounded text-xs text-gray-800 focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={() => {
+                  const newValue = Math.min(52, stockWeeks[itemTab] + 1);
+                  onStockWeekChange(itemTab, newValue);
+                }}
+                className="w-6 h-6 flex items-center justify-center rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs transition-colors"
+              >
+                +
+              </button>
+            </div>
+            <span className="text-xs text-gray-500">주</span>
           </div>
         </div>
 
@@ -242,9 +294,7 @@ export default function StockWeeksSummary({
               <tr className="bg-gray-100 text-gray-600">
                 <th className="px-1.5 py-1 text-left font-medium">구분</th>
                 <th className="px-1.5 py-1 text-right font-medium">당년주수</th>
-                <th className="px-1.5 py-1 text-right font-medium">전년비</th>
                 <th className="px-1.5 py-1 text-right font-medium">당년재고</th>
-                <th className="px-1.5 py-1 text-right font-medium">YOY</th>
               </tr>
             </thead>
             <tbody>
@@ -255,11 +305,43 @@ export default function StockWeeksSummary({
                 const weeksDiff = currentData.weeks - prevData.weeks;
                 const weeksDiffFormatted = formatWeeksDiff(weeksDiff);
                 const inventoryYOY = formatInventoryYOY(currentData.inventory, prevData.inventory);
+                const inventoryDiff = currentData.inventory - prevData.inventory;
+                const inventoryDiffFormatted = formatInventoryDiff(inventoryDiff);
+
+                // 전년비 행인 경우
+                if (row.isYoy) {
+                  return (
+                    <tr
+                      key={idx}
+                      className="border-b border-gray-200"
+                    >
+                      <td
+                        className={cn(
+                          "px-1.5 py-1 text-left whitespace-nowrap pl-2",
+                          "text-gray-600 italic"
+                        )}
+                      >
+                        {row.label}
+                      </td>
+                      <td className={cn("px-1.5 py-1 text-right font-medium whitespace-nowrap", weeksDiffFormatted.color)}>
+                        {weeksDiffFormatted.text}
+                      </td>
+                      <td className={cn("px-1.5 py-1 text-right font-medium whitespace-nowrap", inventoryDiffFormatted.color)}>
+                        {inventoryDiffFormatted.text}
+                      </td>
+                    </tr>
+                  );
+                }
 
                 // level 0, 1은 헤더 스타일 (회색 배경 + 구분선)
                 const isHeader = row.level === 0 || row.level === 1;
                 // 들여쓰기: level 1 = pl-2, level 2 = pl-4
                 const paddingClass = row.level === 0 ? "" : row.level === 1 ? "pl-2" : "pl-4";
+                
+                // 주력상품 아래 직영 행은 연한 회색 텍스트로 표시
+                const isRetailCore = row.type === "retail_core";
+                // 주력상품 아래 대리상, 본사물류는 검정 텍스트로 표시
+                const isCoreDetail = row.type === "frs_core" || row.type === "warehouse_core";
 
                 return (
                   <tr
@@ -272,23 +354,26 @@ export default function StockWeeksSummary({
                     <td
                       className={cn(
                         "px-1.5 py-1 text-left whitespace-nowrap",
-                        isHeader ? "font-semibold text-gray-800" : "text-gray-600",
+                        isHeader ? "font-semibold text-gray-800" : 
+                        isRetailCore ? "text-gray-400" : 
+                        isCoreDetail ? "text-gray-800" : 
+                        "text-gray-600",
                         paddingClass
                       )}
                     >
                       {row.label}
                     </td>
-                    <td className="px-1.5 py-1 text-right font-medium text-gray-800 whitespace-nowrap">
+                    <td className={cn(
+                      "px-1.5 py-1 text-right font-medium whitespace-nowrap",
+                      isRetailCore ? "text-gray-400" : "text-gray-800"
+                    )}>
                       {currentData.weeks === 0 ? "-" : `${currentData.weeks.toFixed(1)}주`}
                     </td>
-                    <td className={cn("px-1.5 py-1 text-right font-medium whitespace-nowrap", weeksDiffFormatted.color)}>
-                      {weeksDiffFormatted.text}
-                    </td>
-                    <td className="px-1.5 py-1 text-right text-gray-500 whitespace-nowrap">
+                    <td className={cn(
+                      "px-1.5 py-1 text-right whitespace-nowrap",
+                      isRetailCore ? "text-gray-400" : "text-gray-500"
+                    )}>
                       {currentData.inventory === 0 ? "-" : `${formatWithComma(currentData.inventory)}M`}
-                    </td>
-                    <td className={cn("px-1.5 py-1 text-right font-medium whitespace-nowrap", inventoryYOY.color)}>
-                      {inventoryYOY.text}
                     </td>
                   </tr>
                 );
