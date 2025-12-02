@@ -6,6 +6,8 @@
 
 // 판매 월별 데이터 구조
 export interface SalesMonthData {
+  // 예상 구간에서는 전체 필드에 전체판매가 저장됨 (주력/아울렛 구분 없음)
+  전체?: number;  // 예상 구간 전체판매 (주력/아울렛 구분 없음)
   전체_core: number;
   전체_outlet: number;
   FRS_core: number;
@@ -45,6 +47,8 @@ export interface SalesSummaryData {
 // 재고 월별 데이터 구조
 export interface InventoryMonthData {
   // 전체재고 (FRS + HQ + OR)
+  // 예상 구간에서는 전체 필드에 전체재고가 저장됨 (주력/아울렛 구분 없음)
+  전체?: number;  // 예상 구간 전체재고 (주력/아울렛 구분 없음)
   전체_core: number;
   전체_outlet: number;
   // 대리상재고 (FRS)

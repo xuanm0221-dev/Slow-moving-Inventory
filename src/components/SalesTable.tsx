@@ -14,6 +14,11 @@ export default function SalesTable({ data, months }: SalesTableProps) {
     if (!monthData) return 0;
 
     if (dataKey === "전체") {
+      // 예상 구간: 전체 필드가 있으면 그것을 사용 (주력/아울렛 구분 없음)
+      if (monthData.전체 !== undefined) {
+        return monthData.전체;
+      }
+      // 실적 구간: 전체_core + 전체_outlet
       return monthData.전체_core + monthData.전체_outlet;
     }
     if (dataKey === "FRS") {

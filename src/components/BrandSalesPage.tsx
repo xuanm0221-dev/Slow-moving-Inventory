@@ -296,6 +296,27 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                   forecastInventoryData={forecastInventoryBrandData}
                   months={allMonths}
                 />
+                
+                {/* 범례 설명 */}
+                <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex flex-wrap items-start gap-6 text-xs text-gray-600">
+                    <div className="flex items-center gap-1">
+                      <span>📊</span>
+                      <span className="font-medium">예상판매매출 계산식:</span>
+                      <span className="ml-2">전년동월 전체판매 실적 × 성장률</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span>📦</span>
+                      <span className="font-medium">예상재고자산 계산식:</span>
+                      <span className="ml-2">이전월 전체재고 + 입고예정 - 판매예정</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span>🚚</span>
+                      <span className="font-medium">입고예정재고:</span>
+                      <span className="ml-2">중국법인 SCM 악세 물류 입고예정일 기준</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

@@ -61,7 +61,7 @@ const MONTHS_2025 = [
   "2025.07", "2025.08", "2025.09", "2025.10", "2025.11", "2025.12"
 ];
 
-// 2025~2026년 월 목록 (forecast 25.11~26.04까지 포함)
+// 2025년 히트맵에는 26.04까지의 재고주수를 함께 표시
 const MONTHS_2025_WITH_FORECAST = [
   ...MONTHS_2025,
   "2026.01",
@@ -69,13 +69,6 @@ const MONTHS_2025_WITH_FORECAST = [
   "2026.03",
   "2026.04",
 ];
-
-// 채널 라벨
-const CHANNEL_LABELS: Record<ChannelTab, string> = {
-  ALL: "전체",
-  FRS: "대리상",
-  창고: "창고",
-};
 
 // daysInMonth에 값이 없는 월(26.01~26.04 등)은 캘린더 기준으로 일수 계산
 function getDaysInMonthFromYm(month: string): number {
@@ -87,11 +80,12 @@ function getDaysInMonthFromYm(month: string): number {
   return new Date(year, m, 0).getDate();
 }
 
-// 월 문자열을 "25.01", "26.01" 형식으로 변환
-function formatMonthLabel(month: string): string {
-  const [yearStr, monthStr] = month.split(".");
-  return `${yearStr.slice(-2)}.${monthStr}`;
-}
+// 채널 라벨
+const CHANNEL_LABELS: Record<ChannelTab, string> = {
+  ALL: "전체",
+  FRS: "대리상",
+  창고: "창고",
+};
 
 // 상품 타입 탭 타입
 type ProductTypeTab = "전체" | "주력" | "아울렛";
@@ -177,9 +171,17 @@ export default function StockWeeksChart({
       const slsData = salesData[month];
       const days = daysInMonth[month] || getDaysInMonthFromYm(month);
 
+      // 월 레이블 생성: 25.01 형식, 예상 월은 (F) 추가
+      const [yearStr, monthStr] = month.split(".");
+      const yearShort = yearStr.slice(-2); // "2025" -> "25"
+      const isForecast = slsData?.isForecast || false;
+      const monthLabel = isForecast 
+        ? `${yearShort}.${monthStr}(F)`
+        : `${yearShort}.${monthStr}`;
+
       if (!invData || !slsData || !days) {
         return {
-          month: formatMonthLabel(month),
+          month: monthLabel,
           합계: null,
           대리상: null,
         };
@@ -208,9 +210,23 @@ export default function StockWeeksChart({
           break;
         case "전체":
         default:
-          // 상품전체: core + outlet
-          totalStock = (invData.전체_core || 0) + (invData.전체_outlet || 0);
-          totalSales = (slsData.전체_core || 0) + (slsData.전체_outlet || 0);
+          // 상품전체: StockWeeksTable의 "전체주수" 계산 로직과 동일하게 사용
+          // 예상 구간에서는 전체 필드 사용, 실적 구간에서는 core + outlet
+          const totalStockFromField = invData.전체 !== undefined ? invData.전체 : null;
+          const totalSalesFromField = slsData.전체 !== undefined ? slsData.전체 : null;
+          const totalStockCore = invData.전체_core || 0;
+          const totalStockOutlet = invData.전체_outlet || 0;
+          const totalSalesCore = slsData.전체_core || 0;
+          const totalSalesOutlet = slsData.전체_outlet || 0;
+          
+          // StockWeeksTable의 "전체주수" 계산과 동일
+          totalStock = totalStockFromField !== null 
+            ? totalStockFromField 
+            : totalStockCore + totalStockOutlet;
+          totalSales = totalSalesFromField !== null 
+            ? totalSalesFromField 
+            : totalSalesCore + totalSalesOutlet;
+          
           frsStock = (invData.FRS_core || 0) + (invData.FRS_outlet || 0);
           frsSales = (slsData.FRS_core || 0) + (slsData.FRS_outlet || 0);
           break;
@@ -222,14 +238,10 @@ export default function StockWeeksChart({
       // 점선: 대리상 기준
       const weeksFRS = calculateWeeks(frsStock, frsSales, days);
 
-      // 예상 구간(forecast)에서는 대리상 구분이 없으므로 null로 설정
-      const isForecast = slsData.isForecast;
-      const displayFRS = isForecast ? null : (weeksFRS !== null ? parseFloat(weeksFRS.toFixed(1)) : null);
-
       return {
-        month: formatMonthLabel(month),
+        month: monthLabel,
         합계: weeksTotal !== null ? parseFloat(weeksTotal.toFixed(1)) : null,
-        대리상: displayFRS,
+        대리상: weeksFRS !== null ? parseFloat(weeksFRS.toFixed(1)) : null,
       };
     });
   }, [inventoryData, salesData, daysInMonth, productTypeTab]);
@@ -240,8 +252,19 @@ export default function StockWeeksChart({
 
     return MONTHS_2025_WITH_FORECAST.map((month) => {
       const days = daysInMonth[month] || getDaysInMonthFromYm(month);
+      
+      // 월 레이블 생성: 25.01 형식, 예상 월은 (F) 추가
+      const [yearStr, monthStr] = month.split(".");
+      const yearShort = yearStr.slice(-2); // "2025" -> "25"
+      // 모든 아이템 모드에서는 첫 번째 아이템의 isForecast를 확인
+      const firstItemData = allSalesData[ITEM_TABS[0]]?.[month];
+      const isForecast = firstItemData?.isForecast || false;
+      const monthLabel = isForecast 
+        ? `${yearShort}.${monthStr}(F)`
+        : `${yearShort}.${monthStr}`;
+      
       const dataPoint: Record<string, string | number | null> = {
-        month: formatMonthLabel(month),
+        month: monthLabel,
       };
 
       ITEM_TABS.forEach((itemTab) => {
@@ -277,9 +300,23 @@ export default function StockWeeksChart({
             break;
           case "전체":
           default:
-            // 상품전체: core + outlet
-            totalStock = (invData.전체_core || 0) + (invData.전체_outlet || 0);
-            totalSales = (slsData.전체_core || 0) + (slsData.전체_outlet || 0);
+            // 상품전체: StockWeeksTable의 "전체주수" 계산 로직과 동일하게 사용
+            // 예상 구간에서는 전체 필드 사용, 실적 구간에서는 core + outlet
+            const totalStockFromField = invData.전체 !== undefined ? invData.전체 : null;
+            const totalSalesFromField = slsData.전체 !== undefined ? slsData.전체 : null;
+            const totalStockCore = invData.전체_core || 0;
+            const totalStockOutlet = invData.전체_outlet || 0;
+            const totalSalesCore = slsData.전체_core || 0;
+            const totalSalesOutlet = slsData.전체_outlet || 0;
+            
+            // StockWeeksTable의 "전체주수" 계산과 동일
+            totalStock = totalStockFromField !== null 
+              ? totalStockFromField 
+              : totalStockCore + totalStockOutlet;
+            totalSales = totalSalesFromField !== null 
+              ? totalSalesFromField 
+              : totalSalesCore + totalSalesOutlet;
+            
             frsStock = (invData.FRS_core || 0) + (invData.FRS_outlet || 0);
             frsSales = (slsData.FRS_core || 0) + (slsData.FRS_outlet || 0);
             break;
@@ -403,9 +440,6 @@ export default function StockWeeksChart({
                   }
                   return null;
                 }}
-              />
-              <Legend 
-                wrapperStyle={{ fontSize: "12px" }}
               />
               {ITEM_TABS.flatMap((itemTab) => [
                 <Line
@@ -539,13 +573,10 @@ export default function StockWeeksChart({
                     return 0;
                   });
                   
-                  // null인 항목은 필터링 (예상 구간에서 대리상이 null인 경우)
-                  const validPayload = sortedPayload.filter(entry => entry.value !== null);
-                  
                   return (
                     <div className="bg-white border border-gray-200 rounded-lg p-2 shadow-lg">
                       <p className="font-medium mb-1">{label}</p>
-                      {validPayload.map((entry, index) => {
+                      {sortedPayload.map((entry, index) => {
                         const dataKey = String(entry.dataKey || "");
                         const labelText = dataKey === "합계" ? "합계" : "대리상";
                         return (
@@ -559,9 +590,6 @@ export default function StockWeeksChart({
                 }
                 return null;
               }}
-            />
-            <Legend 
-              wrapperStyle={{ fontSize: "12px" }}
             />
             <Line
               type="monotone"

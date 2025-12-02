@@ -28,7 +28,10 @@ export default function InventoryStockSummaryTable({
   const getInventoryValue = (month: string): number => {
     const monthData = inventoryData[month];
     if (!monthData) return 0;
-    const total = (monthData.전체_core || 0) + (monthData.전체_outlet || 0);
+    // 예상 구간: 전체 필드가 있으면 그것을 사용 (주력/아울렛 구분 없음)
+    const total = monthData.전체 !== undefined 
+      ? monthData.전체 
+      : (monthData.전체_core || 0) + (monthData.전체_outlet || 0);
     return Math.round(total / 1_000_000);
   };
 
@@ -36,7 +39,10 @@ export default function InventoryStockSummaryTable({
   const getSalesValue = (month: string): number => {
     const monthData = salesData[month];
     if (!monthData) return 0;
-    const total = (monthData.전체_core || 0) + (monthData.전체_outlet || 0);
+    // 예상 구간: 전체 필드가 있으면 그것을 사용 (주력/아울렛 구분 없음)
+    const total = monthData.전체 !== undefined 
+      ? monthData.전체 
+      : (monthData.전체_core || 0) + (monthData.전체_outlet || 0);
     return Math.round(total / 1_000_000);
   };
 

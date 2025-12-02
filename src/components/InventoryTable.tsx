@@ -35,6 +35,11 @@ export default function InventoryTable({ data, months, daysInMonth, stockWeek }:
     const warehouseStockOutlet = hqOrOutletWon - retailStockOutlet;
 
     if (dataKey === "전체") {
+      // 예상 구간: 전체 필드가 있으면 그것을 사용 (주력/아울렛 구분 없음)
+      if (monthData.전체 !== undefined) {
+        return monthData.전체;
+      }
+      // 실적 구간: 전체_core + 전체_outlet
       return (monthData.전체_core || 0) + (monthData.전체_outlet || 0);
     }
     if (dataKey === "FRS") {

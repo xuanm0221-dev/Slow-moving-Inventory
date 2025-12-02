@@ -38,6 +38,9 @@ const COLORS = {
   // 25년 (당년)
   curr_core: "#2563EB",    // 진한 파랑
   curr_outlet: "#93C5FD",  // 연한 파랑
+  // 예상 구간
+  forecast_inventory: "#16A34A",  // 초록색 (재고자산 예상)
+  forecast_sales: "#86EFAC",      // 연한 초록색 (판매매출 예상)
   // YOY 라인
   yoy: "#DC2626",          // 빨간색
 };
@@ -91,10 +94,13 @@ interface TooltipProps {
     name: string;
     payload: {
       month: string;
+      isForecast?: boolean;
       "0_재고자산_주력": number;
       "0_재고자산_아울렛": number;
       "1_판매매출_주력": number;
       "1_판매매출_아울렛": number;
+      "0_재고자산_전체"?: number;
+      "1_판매매출_전체"?: number;
     };
   }>;
 }
@@ -108,6 +114,45 @@ const CustomTooltip = ({ active, payload }: TooltipProps) => {
   const data = payload[0]?.payload;
   if (!data) return null;
 
+  const isForecast = data.isForecast || false;
+
+  // 포맷팅
+  const formatValue = (value: number) => {
+    const roundedValue = Math.round(value / 1_000_000);
+    return roundedValue.toLocaleString() + "M";
+  };
+
+  // 예상 구간: 전체만 표시
+  if (isForecast) {
+    const inventoryTotal = data["0_재고자산_전체"] || 0;
+    const salesTotal = data["1_판매매출_전체"] || 0;
+
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg p-3 text-xs shadow-lg">
+        <div className="font-bold text-gray-800 mb-2">
+          {data.month} (예상)
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <div 
+              className="w-3 h-3 rounded" 
+              style={{ backgroundColor: COLORS.forecast_inventory }}
+            ></div>
+            <span>25년 재고자산 전체: {formatValue(inventoryTotal)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div 
+              className="w-3 h-3 rounded" 
+              style={{ backgroundColor: COLORS.forecast_sales }}
+            ></div>
+            <span>25년 판매매출 전체: {formatValue(salesTotal)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 실적 구간: 주력/아울렛 구분 표시
   const inventoryCore = data["0_재고자산_주력"] || 0;
   const inventoryOutlet = data["0_재고자산_아울렛"] || 0;
   const salesCore = data["1_판매매출_주력"] || 0;
@@ -129,12 +174,6 @@ const CustomTooltip = ({ active, payload }: TooltipProps) => {
   const salesOutletPercent = salesTotal > 0 
     ? ((salesOutlet / salesTotal) * 100).toFixed(1) 
     : "0.0";
-
-  // 포맷팅
-  const formatValue = (value: number) => {
-    const roundedValue = Math.round(value / 1_000_000);
-    return roundedValue.toLocaleString() + "M";
-  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-3 text-xs shadow-lg">
@@ -197,10 +236,13 @@ export default function InventoryChart({
     // ✅ forecast 월 처리
     if (slsData?.isForecast) {
       if (channelTab === "ALL") {
-        // 전체 탭: 전체 재고자산 막대는 계속 보여줌
+        // 전체 탭: 예상 구간에서는 전체 필드 사용 (주력/아울렛 구분 없음)
+        const totalInventory = invData.전체 !== undefined 
+          ? invData.전체 
+          : (invData.전체_core || 0) + (invData.전체_outlet || 0);
         return {
-          core: Math.round(invData.전체_core || 0),
-          outlet: Math.round(invData.전체_outlet || 0),
+          core: Math.round(totalInventory),
+          outlet: 0,
         };
       }
       // 대리상/창고 탭: forecast 구간은 막대 없음
@@ -236,10 +278,14 @@ export default function InventoryChart({
     // ✅ forecast 월 처리
     if (slsData.isForecast) {
       if (channelTab === "ALL") {
-        // 전체 탭: 전체 forecast 판매
+        // 전체 탭: 예상 구간에서는 전체 필드 사용 (주력/아울렛 구분 없음)
+        const totalSales = slsData.전체 !== undefined 
+          ? slsData.전체 
+          : (slsData.전체_core || 0) + (slsData.전체_outlet || 0);
+        // 예상 구간에서는 주력/아울렛 구분 없으므로 전체를 core에 표시
         return {
-          core: Math.round(slsData.전체_core || 0),
-          outlet: Math.round(slsData.전체_outlet || 0),
+          core: Math.round(totalSales),
+          outlet: 0,
         };
       }
       // 대리상/창고 탭: forecast 구간은 막대 없음
@@ -272,18 +318,38 @@ export default function InventoryChart({
     return months.map((monthYm) => {
       const invData = inventoryBrandData[selectedTab]?.[monthYm];
       const slsData = salesBrandData[selectedTab]?.[monthYm];
+      const isForecast = slsData?.isForecast || false;
 
       // “전년” 역할: 해당 월의 판매매출 (채널별)
       const prev = getChannelSales(slsData);
       // “당년” 역할: 해당 월의 재고자산 (채널별, forecast 포함)
       const curr = getChannelInventory(invData, slsData);
 
-      // 월 레이블을 "25.01", "26.01" 형식으로 변환
+      // 월 레이블을 "25.01", "26.01" 형식으로 변환, 예상 월은 (F) 추가
       const [yearStr, monthStr] = monthYm.split(".");
-      const monthLabel = `${yearStr.slice(-2)}.${monthStr}`;
+      const yearShort = yearStr.slice(-2); // "2025" -> "25"
+      const monthLabel = isForecast 
+        ? `${yearShort}.${monthStr}(F)`
+        : `${yearShort}.${monthStr}`;
 
+      // 예상 구간: 전체만 표시 (주력/아울렛 구분 없음)
+      if (isForecast && channelTab === "ALL") {
+        return {
+          month: monthLabel,
+          isForecast: true,
+          "0_재고자산_전체": curr.core,  // 전체 재고자산
+          "0_재고자산_주력": 0,
+          "0_재고자산_아울렛": 0,
+          "1_판매매출_전체": prev.core,  // 전체 판매매출
+          "1_판매매출_주력": 0,
+          "1_판매매출_아울렛": 0,
+        };
+      }
+
+      // 실적 구간: 주력/아울렛 구분 표시
       return {
         month: monthLabel,
+        isForecast: false,
         "0_재고자산_주력": curr.core,      // 재고자산 주력
         "0_재고자산_아울렛": curr.outlet,  // 재고자산 아울렛
         "1_판매매출_주력": prev.core,      // 판매매출 주력
@@ -387,10 +453,24 @@ export default function InventoryChart({
             <Tooltip 
               content={<CustomTooltip />}
             />
-            <Legend 
-              wrapperStyle={{ fontSize: "12px" }}
+            {/* 예상 구간 막대 (25.12부터) - 전체만 표시, 같은 stackId 사용하여 폭 일관성 유지 */}
+            {/* 예상 구간에서는 0_재고자산_전체만 값이 있고 주력/아울렛은 0이므로 같은 stackId 사용해도 전체 막대만 표시됨 */}
+            <Bar 
+              yAxisId="left"
+              dataKey="0_재고자산_전체" 
+              stackId="inventory"
+              fill={COLORS.forecast_inventory}
+              name="25년 재고자산 전체 (예상)"
             />
-            {/* 25년 재고자산 막대 (주력 + 아울렛 스택) - 먼저 표시 */}
+            <Bar 
+              yAxisId="right"
+              dataKey="1_판매매출_전체" 
+              stackId="sales"
+              fill={COLORS.forecast_sales}
+              name="25년 판매매출 전체 (예상)"
+            />
+            {/* 실적 구간 막대 (주력 + 아울렛 스택) */}
+            {/* 실적 구간에서는 0_재고자산_주력/아울렛만 값이 있고 전체는 0이므로 주력/아울렛 스택 막대만 표시됨 */}
             <Bar 
               yAxisId="left"
               dataKey="0_재고자산_주력" 
@@ -428,24 +508,32 @@ export default function InventoryChart({
       <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
         <div className="flex flex-wrap items-center gap-6 text-xs text-gray-600">
           <div className="flex items-center gap-3">
-            <span className="font-medium">25년 판매매출:</span>
-            <div className="flex items-center gap-1">
-              <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.prev_core }}></span>
-              <span>주력</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.prev_outlet }}></span>
-              <span>아울렛</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
             <span className="font-medium">25년 재고자산:</span>
+            <div className="flex items-center gap-1">
+              <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.forecast_inventory }}></span>
+              <span>전체 (예상)</span>
+            </div>
             <div className="flex items-center gap-1">
               <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.curr_core }}></span>
               <span>주력</span>
             </div>
             <div className="flex items-center gap-1">
               <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.curr_outlet }}></span>
+              <span>아울렛</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="font-medium">25년 판매매출:</span>
+            <div className="flex items-center gap-1">
+              <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.forecast_sales }}></span>
+              <span>전체 (예상)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.prev_core }}></span>
+              <span>주력</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-4 h-3 rounded" style={{ backgroundColor: COLORS.prev_outlet }}></span>
               <span>아울렛</span>
             </div>
           </div>

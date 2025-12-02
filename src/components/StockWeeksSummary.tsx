@@ -108,6 +108,8 @@ export default function StockWeeksSummary({
       return { weeks: 0, inventory: 0 };
     }
 
+    // 예상 구간에서는 전체 필드가 있으면 그것을 사용
+    const totalStockFromField = invData.전체 !== undefined ? invData.전체 : null;
     const totalStockCore = invData.전체_core || 0;
     const totalStockOutlet = invData.전체_outlet || 0;
     const frsStockCore = invData.FRS_core || 0;
@@ -125,6 +127,8 @@ export default function StockWeeksSummary({
     const warehouseStockCore = hqOrStockCore - retailStockCore;
     const warehouseStockOutlet = hqOrStockOutlet - retailStockOutlet;
 
+    // 예상 구간에서는 전체 필드가 있으면 그것을 사용
+    const totalSalesFromField = slsData.전체 !== undefined ? slsData.전체 : null;
     const totalSalesCore = slsData.전체_core || 0;
     const totalSalesOutlet = slsData.전체_outlet || 0;
     const frsSalesCore = slsData.FRS_core || 0;
@@ -135,8 +139,15 @@ export default function StockWeeksSummary({
 
     switch (rowType) {
       case "total":
-        weeks = calculateWeeks(totalStockCore + totalStockOutlet, totalSalesCore + totalSalesOutlet, days);
-        inventory = totalStockCore + totalStockOutlet;
+        // 예상 구간에서는 전체 필드 사용, 실적 구간에서는 core + outlet
+        const totalStock = totalStockFromField !== null 
+          ? totalStockFromField 
+          : totalStockCore + totalStockOutlet;
+        const totalSales = totalSalesFromField !== null 
+          ? totalSalesFromField 
+          : totalSalesCore + totalSalesOutlet;
+        weeks = calculateWeeks(totalStock, totalSales, days);
+        inventory = totalStock;
         break;
       case "total_core":
         weeks = calculateWeeks(totalStockCore, totalSalesCore, days);

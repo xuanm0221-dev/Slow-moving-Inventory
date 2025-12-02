@@ -95,12 +95,11 @@ interface BuildInventoryForecastResult {
  * - latestActualYm 이후 forecastMonthsCount개월의 재고자산을 이어붙인다.
  *
  * 수식 (월 m, 아이템 i 기준):
- *  전체(m, i)   = 전체(m-1, i)   + 입고(m, i) - 판매(m, i)
- *  주력(m, i)   = 주력(m-1, i)   + 입고(m, i) - 판매_주력(m, i)
- *  아울렛(m, i) = 아울렛(m-1, i) - 판매_아울렛(m, i)
+ *  전체(m, i) = 전체(m-1, i) + 입고(m, i) - 판매(m, i)
  *
- * - 입고는 모두 주력으로만 간주
- * - 예상 재고자산은 전체/주력/아울렛만 계산, 대리상/본사/직영/창고는 0
+ * - 예상 재고자산은 전체만 계산 (주력/아울렛 구분 없음)
+ * - 계산된 전체재고는 전체 필드에 저장 (전체_core와 전체_outlet에는 저장하지 않음)
+ * - 대리상/본사/직영/창고는 0
  */
 export function buildInventoryForecastForTab(
   params: BuildInventoryForecastParams
@@ -149,10 +148,9 @@ export function buildInventoryForecastForTab(
     };
   }
 
-  // 25.10 기준 기말 재고 (전체/주력/아울렛)
-  let corePrev = latestActualData.전체_core || 0;
-  let outletPrev = latestActualData.전체_outlet || 0;
-  let totalPrev = corePrev + outletPrev;
+  // 25.10 기준 기말 재고 (전체재고)
+  // 실적 구간에서는 전체_core + 전체_outlet의 합
+  let totalPrev = (latestActualData.전체_core || 0) + (latestActualData.전체_outlet || 0);
 
   const resultData: InventoryItemTabData = { ...baseItemInventory };
 
@@ -167,25 +165,22 @@ export function buildInventoryForecastForTab(
       salesBrandDataWithForecast[itemTab]?.[ym] ||
       salesBrandDataWithForecast["전체"]?.[ym];
 
-    const salesCore = salesMonthData?.전체_core || 0;
-    const salesOutlet = salesMonthData?.전체_outlet || 0;
-    const salesTotal = salesCore + salesOutlet;
+    // 예상 구간에서는 전체 필드 사용, 실적 구간에서는 core + outlet
+    const salesTotal = salesMonthData?.전체 !== undefined 
+      ? salesMonthData.전체 
+      : (salesMonthData?.전체_core || 0) + (salesMonthData?.전체_outlet || 0);
 
-    // 입고예정 (전부 주력)
+    // 입고예정 (전체 금액)
     const inbound = getInboundAmountForTab(
       forecastInventoryBrandData,
       ym,
       itemTab
     );
 
-    // 수식 적용
+    // 수식 적용: 전체재고 = 이전월 전체재고 + 입고예정 - 판매예정
     const total = totalPrev + inbound - salesTotal;
-    const core = corePrev + inbound - salesCore;
-    const outlet = outletPrev - salesOutlet;
 
-    // 음수 방지 (필요 없으면 Math.max 제거 가능)
-    const safeCore = Math.max(core, 0);
-    const safeOutlet = Math.max(outlet, 0);
+    // 음수 방지
     const safeTotal = Math.max(total, 0);
 
     // 디버깅용: 25.11 Shoes 예시 확인
@@ -194,17 +189,15 @@ export function buildInventoryForecastForTab(
       console.log("[DEBUG] 25.11 Shoes forecast");
       // eslint-disable-next-line no-console
       console.log("prevTotal:", totalPrev, "inbound:", inbound, "salesTotal:", salesTotal, "calcTotal:", safeTotal);
-      // eslint-disable-next-line no-console
-      console.log("prevCore:", corePrev, "salesCore:", salesCore, "calcCore:", safeCore);
-      // eslint-disable-next-line no-console
-      console.log("prevOutlet:", outletPrev, "salesOutlet:", salesOutlet, "calcOutlet:", safeOutlet);
     }
 
-    // 예상 재고자산은 전체/주력/아울렛만 사용
+    // 예상 재고자산은 전체만 저장 (주력/아울렛 구분 없음)
+    // 계산된 전체재고를 전체 필드에 저장 (전체_core와 전체_outlet에는 저장하지 않음)
     // 대리상/본사/직영/창고 관련 필드는 forecast 구간에서 0으로 둔다.
     const forecastMonthData: InventoryMonthData = {
-      전체_core: safeCore,
-      전체_outlet: safeOutlet,
+      전체: Math.round(safeTotal),  // 계산된 전체재고 저장 (주력/아울렛 구분 없음)
+      전체_core: 0,  // 주력에는 저장하지 않음
+      전체_outlet: 0,  // 아울렛에는 저장하지 않음
       FRS_core: 0,
       FRS_outlet: 0,
       HQ_OR_core: 0,
@@ -215,9 +208,7 @@ export function buildInventoryForecastForTab(
 
     resultData[ym] = forecastMonthData;
 
-    // 다음 월 계산을 위해 prev 값 갱신
-    corePrev = safeCore;
-    outletPrev = safeOutlet;
+    // 다음 월 계산을 위해 prev 값 갱신 (전체주수만)
     totalPrev = safeTotal;
   }
 

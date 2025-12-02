@@ -107,6 +107,10 @@ export default function StockWeeksTable({
       return { display: "-", value: -1 };
     }
 
+    // 예상 구간에서는 전체 필드가 있으면 그것을 사용
+    const isForecast = slsData.isForecast;
+    const totalStockFromField = invData.전체 !== undefined ? invData.전체 : null;
+    
     const totalStockCore = invData.전체_core || 0;
     const totalStockOutlet = invData.전체_outlet || 0;
     const frsStockCore = invData.FRS_core || 0;
@@ -119,7 +123,6 @@ export default function StockWeeksTable({
 
     // forecast 월에서는 전체주수(전체/주력/아울렛)만 사용하고
     // 대리상/창고 관련 주수는 계산하지 않으므로 공백으로 표시
-    const isForecast = slsData.isForecast;
     if (
       isForecast &&
       rowType !== "total" &&
@@ -136,6 +139,8 @@ export default function StockWeeksTable({
     const warehouseStockCore = hqOrStockCore - retailStockCore;
     const warehouseStockOutlet = hqOrStockOutlet - retailStockOutlet;
 
+    // 예상 구간에서는 전체 필드가 있으면 그것을 사용
+    const totalSalesFromField = slsData.전체 !== undefined ? slsData.전체 : null;
     const totalSalesCore = slsData.전체_core || 0;
     const totalSalesOutlet = slsData.전체_outlet || 0;
     const frsSalesCore = slsData.FRS_core || 0;
@@ -143,14 +148,29 @@ export default function StockWeeksTable({
 
     switch (rowType) {
       case "total":
+        // 예상 구간에서는 전체 필드 사용, 실적 구간에서는 core + outlet
+        const totalStock = totalStockFromField !== null 
+          ? totalStockFromField 
+          : totalStockCore + totalStockOutlet;
+        const totalSales = totalSalesFromField !== null 
+          ? totalSalesFromField 
+          : totalSalesCore + totalSalesOutlet;
         return calculateWeeks(
-          totalStockCore + totalStockOutlet,
-          totalSalesCore + totalSalesOutlet,
+          totalStock,
+          totalSales,
           days
         );
       case "total_core":
+        // 예상 구간에서는 주력/아울렛 구분 없으므로 공백 표시
+        if (isForecast) {
+          return { display: "", value: -1 };
+        }
         return calculateWeeks(totalStockCore, totalSalesCore, days);
       case "total_outlet":
+        // 예상 구간에서는 주력/아울렛 구분 없으므로 공백 표시
+        if (isForecast) {
+          return { display: "", value: -1 };
+        }
         return calculateWeeks(totalStockOutlet, totalSalesOutlet, days);
 
       case "frs":

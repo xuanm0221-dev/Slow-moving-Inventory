@@ -106,36 +106,6 @@ function getPrevYearTotal(
 }
 
 /**
- * 최신 실적 월의 주력/아울렛 비중 계산
- */
-function getCoreOutletRatios(
-  brandData: SalesBrandData,
-  itemTab: ItemTab,
-  latestActualYm: number
-): { coreRatio: number; outletRatio: number } {
-  const latestMonthStr = ymToMonth(latestActualYm);
-  const itemData = brandData[itemTab];
-  if (!itemData) return { coreRatio: 0, outletRatio: 0 };
-
-  const latestData = itemData[latestMonthStr];
-  if (!latestData || latestData.isForecast) {
-    return { coreRatio: 0, outletRatio: 0 };
-  }
-
-  const latestTotal =
-    (latestData.전체_core || 0) + (latestData.전체_outlet || 0);
-
-  if (latestTotal === 0) {
-    return { coreRatio: 0, outletRatio: 0 };
-  }
-
-  const coreRatio = (latestData.전체_core || 0) / latestTotal;
-  const outletRatio = (latestData.전체_outlet || 0) / latestTotal;
-
-  return { coreRatio, outletRatio };
-}
-
-/**
  * Forecast 판매매출 데이터 생성
  * @param brandData 브랜드별 판매 데이터
  * @param itemTab 아이템 탭
@@ -169,13 +139,6 @@ export function generateForecastSales(
   // 성장률 팩터 계산
   const growthFactor = growthRatePercent / 100;
 
-  // 최신 실적 월의 주력/아울렛 비중 계산
-  const { coreRatio, outletRatio } = getCoreOutletRatios(
-    brandData,
-    itemTab,
-    latestActualYm
-  );
-
   // 각 forecast 월에 대해 데이터 생성
   for (const forecastMonth of forecastMonths) {
     const forecastYm = monthToYm(forecastMonth);
@@ -187,15 +150,13 @@ export function generateForecastSales(
     // 예상 전체판매 계산
     const forecastTotal = prevTotal * growthFactor;
 
-    // 주력/아울렛 배분
-    const forecastCore = forecastTotal * coreRatio;
-    const forecastOutlet = forecastTotal * outletRatio;
-
     // Forecast 데이터 생성
+    // 예상 판매매출은 전체만 저장 (주력/아울렛 구분 없음)
     // 대리상판매(FRS)와 직영판매(OR)는 forecast에서 계산하지 않음 (0으로 설정)
     const forecastData: SalesMonthData = {
-      전체_core: Math.round(forecastCore),
-      전체_outlet: Math.round(forecastOutlet),
+      전체: Math.round(forecastTotal),  // 계산된 전체판매 저장 (주력/아울렛 구분 없음)
+      전체_core: 0,  // 주력에는 저장하지 않음
+      전체_outlet: 0,  // 아울렛에는 저장하지 않음
       FRS_core: 0,
       FRS_outlet: 0,
       OR_core: 0,
