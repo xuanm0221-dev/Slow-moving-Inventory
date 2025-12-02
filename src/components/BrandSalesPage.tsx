@@ -13,6 +13,8 @@ import {
   createDefaultStockWeeks,
   ForecastInventorySummaryData,
   ForecastInventoryData,
+  ActualArrivalSummaryData,
+  ActualArrivalData,
 } from "@/types/sales";
 import Navigation from "./Navigation";
 import ItemTabs from "./ItemTabs";
@@ -27,6 +29,7 @@ import StockWeekInput from "./StockWeekInput";
 import CollapsibleSection from "./CollapsibleSection";
 import ForecastInventoryTable from "./ForecastInventoryTable";
 import InventoryStockSummaryTable from "./InventoryStockSummaryTable";
+import ActualArrivalTable from "./ActualArrivalTable";
 import { generateForecastForBrand } from "@/lib/forecast";
 import { buildInventoryForecastForTab } from "@/lib/inventoryForecast";
 
@@ -46,6 +49,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
   const [channelTab, setChannelTab] = useState<ChannelTab>("ALL"); // 채널 탭 (ALL, FRS, 창고)
   const [growthRate, setGrowthRate] = useState<number>(105); // 성장률 (기본값 105%)
   const [forecastInventoryData, setForecastInventoryData] = useState<ForecastInventorySummaryData | null>(null);
+  const [actualArrivalData, setActualArrivalData] = useState<ActualArrivalSummaryData | null>(null);
   
   // 특정 아이템의 stockWeek 변경 핸들러
   const handleStockWeekChange = (itemTab: ItemTab, value: number) => {
@@ -83,6 +87,19 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
           }
         } catch (e) {
           console.warn("입고예정 재고자산 데이터 로드 중 오류:", e);
+        }
+
+        // 실제 입고 재고자산 데이터 로드
+        try {
+          const actualArrivalResponse = await fetch("/data/accessory_actual_arrival_summary.json");
+          if (actualArrivalResponse.ok) {
+            const actualArrivalJson: ActualArrivalSummaryData = await actualArrivalResponse.json();
+            setActualArrivalData(actualArrivalJson);
+          } else {
+            console.warn("재고자산입고(실적) 데이터를 불러오는데 실패했습니다.");
+          }
+        } catch (e) {
+          console.warn("재고자산입고(실적) 데이터 로드 중 오류:", e);
         }
 
         if (salesJson.unexpectedCategories?.length > 0) {
@@ -124,6 +141,10 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
   const forecastInventoryBrandData: ForecastInventoryData | undefined =
     forecastInventoryData?.brands[brand];
   const forecastInventoryMonths: string[] = forecastInventoryData?.months || [];
+
+  const actualArrivalBrandData: ActualArrivalData | undefined =
+    actualArrivalData?.brands[brand];
+  const actualArrivalMonths: string[] = actualArrivalData?.months || [];
 
   const allUnexpectedCategories = [
     ...(salesData?.unexpectedCategories || []),
@@ -294,6 +315,7 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                   inventoryData={inventoryTabDataWithForecast}
                   salesData={salesTabData}
                   forecastInventoryData={forecastInventoryBrandData}
+                  actualArrivalData={actualArrivalBrandData}
                   months={allMonths}
                 />
                 
@@ -481,6 +503,45 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                 ) : (
                   <div className="flex items-center justify-center py-10">
                     <p className="text-gray-500">입고예정 재고자산 데이터가 없습니다.</p>
+                  </div>
+                )}
+              </CollapsibleSection>
+            </div>
+
+            {/* 7. 재고자산입고(실적) 표 (새로 추가) */}
+            <div className="mt-4">
+              <CollapsibleSection
+                title="재고자산입고(실적)"
+                icon="📦"
+                iconColor="text-orange-500"
+                defaultOpen={false}
+                legend={
+                  <>
+                    <span className="text-gray-400">
+                      실제로 입고된 재고자산 (파일 존재 월만 표시)
+                    </span>
+                    <span className="text-gray-400">금액단위: 1위안</span>
+                  </>
+                }
+              >
+                {actualArrivalBrandData && actualArrivalMonths.length > 0 ? (
+                  <>
+                    <div className="mb-3 text-xs text-gray-500">
+                      표시 기간:{" "}
+                      {`${actualArrivalMonths[0]} ~ ${
+                        actualArrivalMonths[actualArrivalMonths.length - 1]
+                      }`}
+                    </div>
+                    <ActualArrivalTable
+                      data={actualArrivalBrandData}
+                      months={actualArrivalMonths}
+                    />
+                  </>
+                ) : (
+                  <div className="flex items-center justify-center py-10">
+                    <p className="text-gray-500">
+                      재고자산입고(실적) 데이터가 없습니다.
+                    </p>
                   </div>
                 )}
               </CollapsibleSection>

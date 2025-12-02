@@ -1,10 +1,10 @@
 "use client";
 
-import { ForecastInventoryData } from "@/types/sales";
+import { ActualArrivalData } from "@/types/sales";
 import { formatAmountWon, formatMonth, cn } from "@/lib/utils";
 
-interface ForecastInventoryTableProps {
-  data: ForecastInventoryData;
+interface ActualArrivalTableProps {
+  data: ActualArrivalData;
   months: string[];
 }
 
@@ -16,10 +16,10 @@ const ITEM_ROWS: { label: string; dataKey: string; isHeader: boolean }[] = [
   { label: "ㄴ 기타", dataKey: "Acc_etc", isHeader: false },
 ];
 
-export default function ForecastInventoryTable({
+export default function ActualArrivalTable({
   data,
   months,
-}: ForecastInventoryTableProps) {
+}: ActualArrivalTableProps) {
   const getCellValue = (month: string, dataKey: string): number => {
     const monthData = data[month];
     if (!monthData) return 0;
@@ -40,7 +40,7 @@ export default function ForecastInventoryTable({
   if (!months || months.length === 0) {
     return (
       <div className="flex items-center justify-center py-10">
-        <p className="text-gray-500">입고예정 재고자산 데이터가 없습니다.</p>
+        <p className="text-gray-500">재고자산입고(실적) 데이터가 없습니다.</p>
       </div>
     );
   }
@@ -54,13 +54,8 @@ export default function ForecastInventoryTable({
               구분
             </th>
             {months.map((month) => (
-              <th key={month} className="min-w-[80px] bg-blue-50">
-                <div className="flex items-center justify-center gap-1">
-                  {formatMonth(month)}
-                  <span className="text-xs text-blue-600" title="입고예정">
-                    F
-                  </span>
-                </div>
+              <th key={month} className="min-w-[80px] bg-gray-50">
+                {formatMonth(month)}
               </th>
             ))}
           </tr>
@@ -82,11 +77,8 @@ export default function ForecastInventoryTable({
                 return (
                   <td
                     key={month}
-                    className={cn(
-                      row.isHeader && "row-header font-semibold",
-                      "text-gray-500 italic bg-blue-50/30"
-                    )}
-                    title="입고예정 재고자산"
+                    className={cn(row.isHeader && "row-header font-semibold")}
+                    title="재고자산입고(실적)"
                   >
                     {formatAmountWon(value)}
                   </td>
@@ -99,9 +91,5 @@ export default function ForecastInventoryTable({
     </div>
   );
 }
-
-
-
-
 
 

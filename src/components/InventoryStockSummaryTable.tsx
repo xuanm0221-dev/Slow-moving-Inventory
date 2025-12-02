@@ -5,7 +5,8 @@ import {
   SalesItemTabData, 
   ForecastInventoryData,
   SalesMonthData,
-  ItemTab 
+  ItemTab,
+  ActualArrivalData,
 } from "@/types/sales";
 import { formatAmountM, formatMonth, cn } from "@/lib/utils";
 
@@ -14,6 +15,7 @@ interface InventoryStockSummaryTableProps {
   inventoryData: InventoryItemTabData;
   salesData: SalesItemTabData;
   forecastInventoryData?: ForecastInventoryData;
+  actualArrivalData?: ActualArrivalData;
   months: string[];
 }
 
@@ -22,6 +24,7 @@ export default function InventoryStockSummaryTable({
   inventoryData,
   salesData,
   forecastInventoryData,
+  actualArrivalData,
   months,
 }: InventoryStockSummaryTableProps) {
   // 재고자산(M) 계산: 전체재고 ÷ 1,000,000
@@ -46,23 +49,42 @@ export default function InventoryStockSummaryTable({
     return Math.round(total / 1_000_000);
   };
 
-  // 입고예정재고(M) 계산: 전체 또는 아이템별 금액 ÷ 1,000,000
-  const getForecastInventoryValue = (month: string): number | null => {
-    const monthData = forecastInventoryData?.[month];
-    if (!monthData) return null;
-    
-    // selectedTab에 따라 아이템별 또는 전체 계산
+  // 재고입고금액(M) 계산:
+  // 1) 실제 입고액(ActualArrival)이 있으면 우선 사용
+  // 2) 없으면 입고예정(ForecastInventory)을 사용
+  // 3) 모두 없으면 null
+  const getArrivalValue = (month: string): number | null => {
+    // 1. 실제 입고 데이터
+    const actualMonth = actualArrivalData?.[month];
+    if (actualMonth) {
+      if (selectedTab === "전체") {
+        const total =
+          (actualMonth.Shoes || 0) +
+          (actualMonth.Headwear || 0) +
+          (actualMonth.Bag || 0) +
+          (actualMonth.Acc_etc || 0);
+        return Math.round(total / 1_000_000);
+      } else {
+        const itemValue =
+          actualMonth[selectedTab as keyof typeof actualMonth];
+        if (typeof itemValue !== "number") return null;
+        return Math.round(itemValue / 1_000_000);
+      }
+    }
+
+    // 2. 입고예정 데이터
+    const forecastMonth = forecastInventoryData?.[month];
+    if (!forecastMonth) return null;
+
     if (selectedTab === "전체") {
-      // 전체: 모든 아이템 합계
-      const total = 
-        (monthData.Shoes || 0) +
-        (monthData.Headwear || 0) +
-        (monthData.Bag || 0) +
-        (monthData.Acc_etc || 0);
+      const total =
+        (forecastMonth.Shoes || 0) +
+        (forecastMonth.Headwear || 0) +
+        (forecastMonth.Bag || 0) +
+        (forecastMonth.Acc_etc || 0);
       return Math.round(total / 1_000_000);
     } else {
-      // 아이템별: 선택된 탭의 금액만
-      const itemValue = monthData[selectedTab];
+      const itemValue = forecastMonth[selectedTab];
       if (itemValue === undefined) return null;
       return Math.round(itemValue / 1_000_000);
     }
@@ -89,7 +111,7 @@ export default function InventoryStockSummaryTable({
   const rows = [
     { label: "재고자산(M)", getValue: getInventoryValue },
     { label: "판매매출(M)", getValue: getSalesValue },
-    { label: "입고예정재고(M)", getValue: getForecastInventoryValue },
+    { label: "재고입고금액(M)", getValue: getArrivalValue },
   ];
 
   return (
@@ -126,7 +148,7 @@ export default function InventoryStockSummaryTable({
               {displayMonths.map((month) => {
                 const value = row.getValue(month);
                 const isForecast = isForecastMonth(month);
-                const isForecastRow = row.label === "입고예정재고(M)";
+                const isForecastRow = row.label === "재고입고금액(M)";
                 
                 return (
                   <td

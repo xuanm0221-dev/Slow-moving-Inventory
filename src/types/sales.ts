@@ -113,6 +113,31 @@ export interface ForecastInventorySummaryData {
   months: string[]; // 존재하는 월만 포함 (예: ["2025.11", "2025.12", "2026.01"])
 }
 
+// ========== 실제 입고 재고자산(Actual Arrival) 타입 ==========
+
+// 월별 실제 입고 재고자산 데이터 (아이템별 금액)
+export interface ActualArrivalMonthData {
+  Shoes?: number;
+  Headwear?: number;
+  Bag?: number;
+  Acc_etc?: number;
+}
+
+// 브랜드별 실제 입고 재고자산 데이터 (월 → 아이템별 금액)
+export interface ActualArrivalData {
+  [month: string]: ActualArrivalMonthData; // 예: "2025.01"
+}
+
+// 전체 실제 입고 재고자산 요약 데이터 구조
+export interface ActualArrivalSummaryData {
+  brands: {
+    MLB: ActualArrivalData;
+    "MLB KIDS": ActualArrivalData;
+    DISCOVERY: ActualArrivalData;
+  };
+  months: string[]; // 존재하는 월만 포함 (예: ["2025.01", "2025.02", ...])
+}
+
 // ========== 공통 타입 ==========
 
 // 아이템 탭 타입
