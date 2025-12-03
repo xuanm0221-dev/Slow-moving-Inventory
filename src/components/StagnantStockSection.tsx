@@ -27,10 +27,35 @@ const ITEM_COLORS: Record<string, string> = {
 };
 
 export default function StagnantStockSection({ brand }: StagnantStockSectionProps) {
+  // 현재 월까지의 옵션 생성 함수
+  const generateMonthOptions = useMemo((): string[] => {
+    const options: string[] = [];
+    const startDate = new Date(2024, 0, 1); // 2024년 1월
+    const endDate = new Date(); // 현재 날짜
+    
+    let currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      options.push(`${year}${month}`);
+      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+    }
+    
+    return options.reverse(); // 최신 월이 먼저 나오도록 역순 정렬
+  }, []);
+
+  // 초기값을 가장 최근 월로 설정
+  const getInitialMonth = (): string => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    return `${year}${month}`;
+  };
+
   const [data, setData] = useState<StagnantStockRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [yyyymm, setYyyymm] = useState("202510");
+  const [yyyymm, setYyyymm] = useState(getInitialMonth());
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("전체");
   const [itemFilter, setItemFilter] = useState<ItemFilter>("전체");
   const [showOnlyStagnant, setShowOnlyStagnant] = useState(false);
@@ -105,7 +130,7 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
     });
 
     return Object.values(summary);
-  }, [filteredDataByItem]);
+  }, [filteredDataByItem, thresholdPercent]);
 
   // 필터링된 품번 리스트
   const filteredProductList = useMemo(() => {
@@ -126,7 +151,7 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
       }
       return (b.END_STOCK_TAG_AMT || 0) - (a.END_STOCK_TAG_AMT || 0);
     });
-  }, [filteredDataByItem, showOnlyStagnant]);
+  }, [filteredDataByItem, showOnlyStagnant, thresholdPercent]);
 
   // 정체재고와 정상재고로 분리
   const stagnantProducts = useMemo(() => {
@@ -198,13 +223,17 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-gray-700">기준월:</label>
-          <input
-            type="text"
+          <select
             value={yyyymm}
             onChange={(e) => setYyyymm(e.target.value)}
-            placeholder="202510"
-            className="px-3 py-1 border border-gray-300 rounded-md text-sm"
-          />
+            className="px-3 py-1 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+          >
+            {generateMonthOptions.map((month) => (
+              <option key={month} value={month}>
+                {month}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* 정체재고 기준 입력 (직접 입력: 예) 0.01, 0.02, 0.03 등 */}
