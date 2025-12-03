@@ -31,6 +31,7 @@ import CollapsibleSection from "./CollapsibleSection";
 import ForecastInventoryTable from "./ForecastInventoryTable";
 import InventoryStockSummaryTable from "./InventoryStockSummaryTable";
 import ActualArrivalTable from "./ActualArrivalTable";
+import StagnantStockSection from "./StagnantStockSection";
 import { generateForecastForBrand } from "@/lib/forecast";
 import { buildInventoryForecastForTab } from "@/lib/inventoryForecast";
 import { computeStockWeeksForChart, StockWeeksChartPoint, ProductTypeTab } from "@/utils/stockWeeks";
@@ -443,140 +444,157 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
               </div>
             )}
 
-            {/* 4. 판매매출 표 (토글 기능 - 기본 접힘) */}
-            <div className="mb-4">
+            {/* 8. 정체재고 분석 섹션 (새로 추가) */}
+            <div className="mt-6">
+              <StagnantStockSection brand={brand} />
+            </div>
+
+            {/* 재고 및 판매 데이터 (4개 섹션 통합) */}
+            <div className="mt-6">
               <CollapsibleSection
-                title="판매매출"
+                title="재고 및 판매 데이터"
                 icon="📊"
-                iconColor="text-blue-500"
+                iconColor="text-gray-600"
                 defaultOpen={false}
-                legend={
-                  <>
-                    <span><span className="text-gray-400">전체판매:</span> FRS + OR</span>
-                    <span><span className="text-gray-400">대리상판매:</span> Channel 2 = FRS</span>
-                    <span><span className="text-gray-400">직영판매:</span> Channel 2 = OR</span>
-                    <span><span className="text-gray-400">금액단위:</span> 1위안</span>
-                  </>
-                }
               >
-                {salesTabData && allMonths.length > 0 ? (
-                  <SalesTable data={salesTabData} months={allMonths} />
-                ) : (
-                  <div className="flex items-center justify-center py-10">
-                    <p className="text-gray-500">판매 데이터가 없습니다.</p>
+                <div className="space-y-4">
+                  {/* 4. 판매매출 표 */}
+                  <div>
+                    <CollapsibleSection
+                      title="판매매출"
+                      icon="📊"
+                      iconColor="text-blue-500"
+                      defaultOpen={false}
+                      legend={
+                        <>
+                          <span><span className="text-gray-400">전체판매:</span> FRS + OR</span>
+                          <span><span className="text-gray-400">대리상판매:</span> Channel 2 = FRS</span>
+                          <span><span className="text-gray-400">직영판매:</span> Channel 2 = OR</span>
+                          <span><span className="text-gray-400">금액단위:</span> 1위안</span>
+                        </>
+                      }
+                    >
+                      {salesTabData && allMonths.length > 0 ? (
+                        <SalesTable data={salesTabData} months={allMonths} />
+                      ) : (
+                        <div className="flex items-center justify-center py-10">
+                          <p className="text-gray-500">판매 데이터가 없습니다.</p>
+                        </div>
+                      )}
+                    </CollapsibleSection>
                   </div>
-                )}
-              </CollapsibleSection>
-            </div>
 
-            {/* 5. 재고자산 표 (토글 기능 - 기본 접힘) */}
-            <div>
-              <CollapsibleSection
-                title="재고자산"
-                icon="📦"
-                iconColor="text-green-500"
-                defaultOpen={false}
-                legend={
-                  <>
-                    <span><span className="text-gray-400">전체재고:</span> FRS + HQ + OR</span>
-                    <span><span className="text-gray-400">본사재고:</span> HQ + OR</span>
-                    <span><span className="text-gray-400">직영재고:</span> OR판매 ÷ 일수 × 7 × {stockWeeks[selectedTab]}주</span>
-                    <span><span className="text-gray-400">창고재고:</span> 본사재고 - 직영재고</span>
-                  </>
-                }
-              >
-                {inventoryTabDataWithForecast &&
-                inventoryMonthsWithForecast.length > 0 &&
-                inventoryData?.daysInMonth ? (
-                  <InventoryTable 
-                    data={inventoryTabDataWithForecast} 
-                    months={inventoryMonthsWithForecast}
-                    daysInMonth={inventoryData.daysInMonth}
-                    stockWeek={stockWeeks[selectedTab]}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center py-10">
-                    <p className="text-gray-500">재고 데이터가 없습니다.</p>
+                  {/* 5. 재고자산 표 */}
+                  <div>
+                    <CollapsibleSection
+                      title="재고자산"
+                      icon="📦"
+                      iconColor="text-green-500"
+                      defaultOpen={false}
+                      legend={
+                        <>
+                          <span><span className="text-gray-400">전체재고:</span> FRS + HQ + OR</span>
+                          <span><span className="text-gray-400">본사재고:</span> HQ + OR</span>
+                          <span><span className="text-gray-400">직영재고:</span> OR판매 ÷ 일수 × 7 × {stockWeeks[selectedTab]}주</span>
+                          <span><span className="text-gray-400">창고재고:</span> 본사재고 - 직영재고</span>
+                        </>
+                      }
+                    >
+                      {inventoryTabDataWithForecast &&
+                      inventoryMonthsWithForecast.length > 0 &&
+                      inventoryData?.daysInMonth ? (
+                        <InventoryTable 
+                          data={inventoryTabDataWithForecast} 
+                          months={inventoryMonthsWithForecast}
+                          daysInMonth={inventoryData.daysInMonth}
+                          stockWeek={stockWeeks[selectedTab]}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center py-10">
+                          <p className="text-gray-500">재고 데이터가 없습니다.</p>
+                        </div>
+                      )}
+                    </CollapsibleSection>
                   </div>
-                )}
-              </CollapsibleSection>
-            </div>
 
-            {/* 6. 입고예정 재고자산 표 (새로 추가) */}
-            <div className="mt-4">
-              <CollapsibleSection
-                title="입고예정 재고자산"
-                icon="📥"
-                iconColor="text-purple-500"
-                defaultOpen={false}
-                legend={
-                  <>
-                    <span className="text-gray-400">
-                      실적 이후 6개월 기준 입고예정 재고자산 (파일 존재 월만 표시)
-                    </span>
-                    <span className="text-gray-400">금액단위: 1위안</span>
-                  </>
-                }
-              >
-                {forecastInventoryBrandData && forecastInventoryMonths.length > 0 ? (
-                  <>
-                    <div className="mb-3 text-xs text-gray-500">
-                      표시 기간:{" "}
-                      {forecastInventoryMonths.length > 0
-                        ? `${forecastInventoryMonths[0]} ~ ${
-                            forecastInventoryMonths[forecastInventoryMonths.length - 1]
-                          }`
-                        : "데이터 없음"}
-                    </div>
-                    <ForecastInventoryTable
-                      data={forecastInventoryBrandData}
-                      months={forecastInventoryMonths}
-                    />
-                  </>
-                ) : (
-                  <div className="flex items-center justify-center py-10">
-                    <p className="text-gray-500">입고예정 재고자산 데이터가 없습니다.</p>
+                  {/* 6. 입고예정 재고자산 표 */}
+                  <div>
+                    <CollapsibleSection
+                      title="입고예정 재고자산"
+                      icon="📥"
+                      iconColor="text-purple-500"
+                      defaultOpen={false}
+                      legend={
+                        <>
+                          <span className="text-gray-400">
+                            실적 이후 6개월 기준 입고예정 재고자산 (파일 존재 월만 표시)
+                          </span>
+                          <span className="text-gray-400">금액단위: 1위안</span>
+                        </>
+                      }
+                    >
+                      {forecastInventoryBrandData && forecastInventoryMonths.length > 0 ? (
+                        <>
+                          <div className="mb-3 text-xs text-gray-500">
+                            표시 기간:{" "}
+                            {forecastInventoryMonths.length > 0
+                              ? `${forecastInventoryMonths[0]} ~ ${
+                                  forecastInventoryMonths[forecastInventoryMonths.length - 1]
+                                }`
+                              : "데이터 없음"}
+                          </div>
+                          <ForecastInventoryTable
+                            data={forecastInventoryBrandData}
+                            months={forecastInventoryMonths}
+                          />
+                        </>
+                      ) : (
+                        <div className="flex items-center justify-center py-10">
+                          <p className="text-gray-500">입고예정 재고자산 데이터가 없습니다.</p>
+                        </div>
+                      )}
+                    </CollapsibleSection>
                   </div>
-                )}
-              </CollapsibleSection>
-            </div>
 
-            {/* 7. 재고자산입고(실적) 표 (새로 추가) */}
-            <div className="mt-4">
-              <CollapsibleSection
-                title="재고자산입고(실적)"
-                icon="📦"
-                iconColor="text-orange-500"
-                defaultOpen={false}
-                legend={
-                  <>
-                    <span className="text-gray-400">
-                      실제로 입고된 재고자산 (파일 존재 월만 표시)
-                    </span>
-                    <span className="text-gray-400">금액단위: 1위안</span>
-                  </>
-                }
-              >
-                {actualArrivalBrandData && actualArrivalMonths.length > 0 ? (
-                  <>
-                    <div className="mb-3 text-xs text-gray-500">
-                      표시 기간:{" "}
-                      {`${actualArrivalMonths[0]} ~ ${
-                        actualArrivalMonths[actualArrivalMonths.length - 1]
-                      }`}
-                    </div>
-                    <ActualArrivalTable
-                      data={actualArrivalBrandData}
-                      months={actualArrivalMonths}
-                    />
-                  </>
-                ) : (
-                  <div className="flex items-center justify-center py-10">
-                    <p className="text-gray-500">
-                      재고자산입고(실적) 데이터가 없습니다.
-                    </p>
+                  {/* 7. 재고자산입고(실적) 표 */}
+                  <div>
+                    <CollapsibleSection
+                      title="재고자산입고(실적)"
+                      icon="📦"
+                      iconColor="text-orange-500"
+                      defaultOpen={false}
+                      legend={
+                        <>
+                          <span className="text-gray-400">
+                            실제로 입고된 재고자산 (파일 존재 월만 표시)
+                          </span>
+                          <span className="text-gray-400">금액단위: 1위안</span>
+                        </>
+                      }
+                    >
+                      {actualArrivalBrandData && actualArrivalMonths.length > 0 ? (
+                        <>
+                          <div className="mb-3 text-xs text-gray-500">
+                            표시 기간:{" "}
+                            {`${actualArrivalMonths[0]} ~ ${
+                              actualArrivalMonths[actualArrivalMonths.length - 1]
+                            }`}
+                          </div>
+                          <ActualArrivalTable
+                            data={actualArrivalBrandData}
+                            months={actualArrivalMonths}
+                          />
+                        </>
+                      ) : (
+                        <div className="flex items-center justify-center py-10">
+                          <p className="text-gray-500">
+                            재고자산입고(실적) 데이터가 없습니다.
+                          </p>
+                        </div>
+                      )}
+                    </CollapsibleSection>
                   </div>
-                )}
+                </div>
               </CollapsibleSection>
             </div>
           </>

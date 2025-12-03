@@ -251,3 +251,28 @@ export const createDefaultStockWeeks = (): StockWeeksByItem => ({
   Bag: DEFAULT_STOCK_WEEK,
   Acc_etc: DEFAULT_STOCK_WEEK,
 });
+
+// ========== 정체재고 분석 타입 ==========
+
+export interface StagnantStockRow {
+  YYYYMM: string;
+  BRD_CD: string;
+  CHANNEL: string;
+  ITEM_STD: string; // 신발/모자/가방/기타
+  PRDT_CD: string;
+  SESN: string;
+  SALE_AMT: number;
+  END_STOCK_TAG_AMT: number;
+  MID_END_STOCK_AMT: number;
+  SALE_RATIO_MID_STOCK: number | null;
+  STOCK_STATUS: "정체재고" | "정상재고";
+}
+
+export interface StagnantStockSummary {
+  channel: string;
+  itemStd: string;
+  stockStatus: "정체재고" | "정상재고";
+  totalStockAmt: number;
+  productCount: number;
+  totalSaleAmt: number;
+}

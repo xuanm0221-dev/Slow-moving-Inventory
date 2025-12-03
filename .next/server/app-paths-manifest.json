@@ -1,5 +1,5 @@
 {
-  "/page": "app/page.js",
   "/mlb-sales/page": "app/mlb-sales/page.js",
-  "/api/forecast-inventory/route": "app/api/forecast-inventory/route.js"
+  "/mlb-kids-sales/page": "app/mlb-kids-sales/page.js",
+  "/api/snow/stagnant-stock/route": "app/api/snow/stagnant-stock/route.js"
 }
