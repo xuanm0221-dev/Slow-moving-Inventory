@@ -364,7 +364,10 @@ export function computeStockWeeksForChart(
     }
 
     // 실선: 합계 기준
-    const weeksTotal = calculateWeeks(totalStock, totalSales, days);
+    // 예상 구간에서는 주력/아울렛 탭일 때 선 표시하지 않음
+    const weeksTotal = (isForecast && (productTypeTab === "주력" || productTypeTab === "아울렛"))
+      ? null
+      : calculateWeeks(totalStock, totalSales, days);
 
     // 점선: 대리상 기준
     // 히트맵과 동일: 예상 구간에서는 대리상주수 계산하지 않음
