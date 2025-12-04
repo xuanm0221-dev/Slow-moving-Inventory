@@ -281,19 +281,28 @@ export default function StagnantStockChart({ brand, channelFilter, productType, 
 
         const results = await Promise.all(promises);
         const chartDataMap: Record<string, StagnantStockRow[]> = {};
-        const errors: string[] = [];
+        const errorMessages = new Set<string>();
+        let errorCount = 0;
         
         results.forEach(({ month, data, error }) => {
           if (error) {
-            errors.push(`${month}: ${error}`);
+            errorCount++;
+            // 동일한 에러 메시지는 한 번만 저장
+            errorMessages.add(error);
           }
           chartDataMap[month] = data;
         });
         
         setChartData(chartDataMap);
         
-        if (errors.length > 0) {
-          setError(`일부 데이터를 불러오는데 실패했습니다: ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? '...' : ''}`);
+        if (errorCount > 0) {
+          // 에러 메시지가 모두 같으면 하나만 표시, 다르면 요약
+          const uniqueErrors = Array.from(errorMessages);
+          if (uniqueErrors.length === 1) {
+            setError(uniqueErrors[0]);
+          } else {
+            setError(`데이터를 불러오는데 실패했습니다. (${errorCount}개 월 실패)`);
+          }
         }
       } catch (err) {
         console.error("Chart data fetch error:", err);
