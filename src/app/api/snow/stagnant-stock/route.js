@@ -6,6 +6,26 @@ export const dynamic = "force-dynamic";
 const snowflake = require("snowflake-sdk");
 
 export async function GET(request) {
+  // 환경 변수 체크
+  const requiredEnvVars = [
+    'SNOWFLAKE_ACCOUNT',
+    'SNOWFLAKE_USERNAME',
+    'SNOWFLAKE_PASSWORD',
+    'SNOWFLAKE_WAREHOUSE',
+    'SNOWFLAKE_DATABASE',
+    'SNOWFLAKE_SCHEMA',
+    'SNOWFLAKE_ROLE'
+  ];
+
+  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+  if (missingVars.length > 0) {
+    console.error("Missing environment variables:", missingVars);
+    return NextResponse.json({ 
+      error: `Missing environment variables: ${missingVars.join(', ')}`,
+      details: "Please configure all required Snowflake environment variables in Vercel."
+    }, { status: 500 });
+  }
+
   const { searchParams } = new URL(request.url);
   const yyyymm = searchParams.get("yyyymm") || "202510";
   const brdCd = searchParams.get("brdCd") || "M"; // M=MLB, I=MLB KIDS, X=DISCOVERY
@@ -34,8 +54,12 @@ export async function GET(request) {
     connection.connect((err) => {
       if (err) {
         console.error("Snowflake connection error:", err);
+        connection.destroy();
         resolve(
-          NextResponse.json({ error: err.message }, { status: 500 })
+          NextResponse.json({ 
+            error: err.message,
+            details: "Failed to connect to Snowflake. Please check environment variables and network connectivity."
+          }, { status: 500 })
         );
         return;
       }
