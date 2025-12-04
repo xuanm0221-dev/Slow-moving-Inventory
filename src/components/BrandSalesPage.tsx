@@ -32,6 +32,7 @@ import ForecastInventoryTable from "./ForecastInventoryTable";
 import InventoryStockSummaryTable from "./InventoryStockSummaryTable";
 import ActualArrivalTable from "./ActualArrivalTable";
 import StagnantStockSection from "./StagnantStockSection";
+import StagnantStockChart from "./StagnantStockChart";
 import { generateForecastForBrand } from "@/lib/forecast";
 import { buildInventoryForecastForTab } from "@/lib/inventoryForecast";
 import { computeStockWeeksForChart, StockWeeksChartPoint, ProductTypeTab } from "@/utils/stockWeeks";
@@ -443,6 +444,14 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
                 />
               </div>
             )}
+
+            {/* 재고금액 시즌별 추이 차트 */}
+            <StagnantStockChart 
+              brand={brand} 
+              channelFilter="전체"
+              productType="스타일코드기준"
+              thresholdPercent={0.01}
+            />
 
             {/* 8. 정체재고 분석 섹션 (새로 추가) */}
             <div className="mt-6">

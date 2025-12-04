@@ -263,6 +263,7 @@ export interface StagnantStockRow {
   SESN: string;
   SALE_AMT: number;
   END_STOCK_TAG_AMT: number;
+  END_STOCK_QTY: number;
   MID_END_STOCK_AMT: number;
   SALE_RATIO_MID_STOCK: number | null;
   STOCK_STATUS: "정체재고" | "정상재고";

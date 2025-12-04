@@ -19,6 +19,9 @@ type ChannelFilter = typeof CHANNEL_TABS[number];
 const ITEM_TABS = ["전체", "신발", "모자", "가방", "기타"] as const;
 type ItemFilter = typeof ITEM_TABS[number];
 
+const PRODUCT_TYPE_TABS = ["스타일코드기준", "컬러사이즈기준"] as const;
+type ProductTypeFilter = typeof PRODUCT_TYPE_TABS[number];
+
 const ITEM_COLORS: Record<string, string> = {
   "신발": "#3B82F6",
   "모자": "#10B981",
@@ -33,8 +36,31 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
   const [yyyymm, setYyyymm] = useState("202510");
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("전체");
   const [itemFilter, setItemFilter] = useState<ItemFilter>("전체");
+  const [productType, setProductType] = useState<ProductTypeFilter>("스타일코드기준");
   const [showOnlyStagnant, setShowOnlyStagnant] = useState(false);
   const [thresholdPercent, setThresholdPercent] = useState<number>(0.01); // 정체재고 기준 (% 단위, 예: 0.01 = 0.01%)
+
+  // 기준월 목록 생성 (2024.01 ~ 2025.11)
+  const monthOptions = useMemo(() => {
+    const months: { value: string; label: string }[] = [];
+    // 2024년 1월 ~ 12월
+    for (let month = 1; month <= 12; month++) {
+      const monthStr = month.toString().padStart(2, '0');
+      months.push({
+        value: `2024${monthStr}`,
+        label: `2024.${monthStr}`
+      });
+    }
+    // 2025년 1월 ~ 11월
+    for (let month = 1; month <= 11; month++) {
+      const monthStr = month.toString().padStart(2, '0');
+      months.push({
+        value: `2025${monthStr}`,
+        label: `2025.${monthStr}`
+      });
+    }
+    return months;
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -42,8 +68,9 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
       setError(null);
       try {
         const channelParam = channelFilter === "전체" ? "ALL" : channelFilter;
+        const productTypeParam = productType === "컬러사이즈기준" ? "scs" : "cd";
         const response = await fetch(
-          `/api/snow/stagnant-stock?yyyymm=${yyyymm}&brdCd=${BRAND_CODE_MAP[brand]}&channel=${channelParam}`
+          `/api/snow/stagnant-stock?yyyymm=${yyyymm}&brdCd=${BRAND_CODE_MAP[brand]}&channel=${channelParam}&productType=${productTypeParam}`
         );
         if (!response.ok) {
           throw new Error("데이터를 불러오는데 실패했습니다.");
@@ -58,7 +85,7 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
     };
 
     fetchData();
-  }, [brand, yyyymm, channelFilter]);
+  }, [brand, yyyymm, channelFilter, productType]);
 
   // 중분류 필터링된 데이터
   const filteredDataByItem = useMemo(() => {
@@ -105,7 +132,7 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
     });
 
     return Object.values(summary);
-  }, [filteredDataByItem]);
+  }, [filteredDataByItem, thresholdPercent]);
 
   // 필터링된 품번 리스트
   const filteredProductList = useMemo(() => {
@@ -126,16 +153,165 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
       }
       return (b.END_STOCK_TAG_AMT || 0) - (a.END_STOCK_TAG_AMT || 0);
     });
-  }, [filteredDataByItem, showOnlyStagnant]);
+  }, [filteredDataByItem, showOnlyStagnant, thresholdPercent]);
+
+  // 시즌 판별 함수 (당년 기준: 2025년)
+  const getSeasonType = (sesn: string | null | undefined): "당시즌" | "차기시즌" | "과시즌" => {
+    if (!sesn) return "과시즌";
+    if (sesn.startsWith("25")) return "당시즌";
+    if (sesn.startsWith("26")) return "차기시즌";
+    return "과시즌";
+  };
+
+  // 전년도 시즌 판별 함수 (전년 기준: 2024년)
+  const getPrevYearSeasonType = (sesn: string | null | undefined): "당시즌" | "차기시즌" | "과시즌" => {
+    if (!sesn) return "과시즌";
+    if (sesn.startsWith("25")) return "차기시즌"; // 2025년 시즌 = 차기시즌
+    if (sesn.startsWith("24")) return "당시즌"; // 2024년 시즌 = 당시즌
+    return "과시즌";
+  };
 
   // 정체재고와 정상재고로 분리
   const stagnantProducts = useMemo(() => {
     return filteredProductList.filter(row => getStockStatus(row) === "정체재고");
-  }, [filteredProductList]);
+  }, [filteredProductList, thresholdPercent]);
 
   const normalProducts = useMemo(() => {
     return filteredProductList.filter(row => getStockStatus(row) === "정상재고");
-  }, [filteredProductList]);
+  }, [filteredProductList, thresholdPercent]);
+
+  // 정상재고를 시즌별로 분리
+  const normalProductsBySeason = useMemo(() => {
+    const 당시즌 = normalProducts.filter(row => getSeasonType(row.SESN) === "당시즌");
+    const 차기시즌 = normalProducts.filter(row => getSeasonType(row.SESN) === "차기시즌");
+    const 과시즌 = normalProducts.filter(row => getSeasonType(row.SESN) === "과시즌");
+    return { 당시즌, 차기시즌, 과시즌 };
+  }, [normalProducts]);
+
+  // 당월일수 계산 함수
+  const getDaysInMonth = (yyyymm: string): number => {
+    const year = parseInt(yyyymm.substring(0, 4));
+    const month = parseInt(yyyymm.substring(4, 6));
+    return new Date(year, month, 0).getDate();
+  };
+
+  // 재고주수 계산 함수: 재고금액 ÷ (매출금액 ÷ 당월일수 x 7)
+  const calculateStockWeeks = (stockAmt: number, saleAmt: number, yyyymm: string): number | null => {
+    if (!stockAmt || !saleAmt || saleAmt === 0) {
+      return null;
+    }
+    const daysInMonth = getDaysInMonth(yyyymm);
+    const weeklySale = (saleAmt / daysInMonth) * 7;
+    if (weeklySale === 0) {
+      return null;
+    }
+    return stockAmt / weeklySale;
+  };
+
+  // 각 테이블의 총액 계산
+  const 당시즌Total = useMemo(() => {
+    const data = normalProductsBySeason.당시즌;
+    if (data.length === 0) return null;
+    
+    const totalStockAmt = data.reduce((sum, row) => sum + (row.END_STOCK_TAG_AMT || 0), 0);
+    const totalSaleAmt = data.reduce((sum, row) => sum + (row.SALE_AMT || 0), 0);
+    const totalStockQty = data.reduce((sum, row) => sum + (row.END_STOCK_QTY || 0), 0);
+    const uniqueProducts = new Set(data.map(row => row.PRDT_CD)).size;
+    const uniqueSeasons = new Set(data.map(row => row.SESN).filter(s => s)).size;
+    const channels = Array.from(new Set(data.map(row => row.CHANNEL))).join("/");
+    
+    const stockWeeks = calculateStockWeeks(totalStockAmt, totalSaleAmt, yyyymm);
+    const totalRatio = data.reduce((sum, row) => sum + (row.SALE_RATIO_MID_STOCK || 0), 0);
+    
+    return {
+      totalStockAmt,
+      totalSaleAmt,
+      totalStockQty,
+      uniqueProducts,
+      uniqueSeasons,
+      channels,
+      stockWeeks,
+      totalRatio,
+    };
+  }, [normalProductsBySeason.당시즌, yyyymm]);
+
+  const 차기시즌Total = useMemo(() => {
+    const data = normalProductsBySeason.차기시즌;
+    if (data.length === 0) return null;
+    
+    const totalStockAmt = data.reduce((sum, row) => sum + (row.END_STOCK_TAG_AMT || 0), 0);
+    const totalSaleAmt = data.reduce((sum, row) => sum + (row.SALE_AMT || 0), 0);
+    const totalStockQty = data.reduce((sum, row) => sum + (row.END_STOCK_QTY || 0), 0);
+    const uniqueProducts = new Set(data.map(row => row.PRDT_CD)).size;
+    const uniqueSeasons = new Set(data.map(row => row.SESN).filter(s => s)).size;
+    const channels = Array.from(new Set(data.map(row => row.CHANNEL))).join("/");
+    
+    const stockWeeks = calculateStockWeeks(totalStockAmt, totalSaleAmt, yyyymm);
+    const totalRatio = data.reduce((sum, row) => sum + (row.SALE_RATIO_MID_STOCK || 0), 0);
+    
+    return {
+      totalStockAmt,
+      totalSaleAmt,
+      totalStockQty,
+      uniqueProducts,
+      uniqueSeasons,
+      channels,
+      stockWeeks,
+      totalRatio,
+    };
+  }, [normalProductsBySeason.차기시즌, yyyymm]);
+
+  const 과시즌Total = useMemo(() => {
+    const data = normalProductsBySeason.과시즌;
+    if (data.length === 0) return null;
+    
+    const totalStockAmt = data.reduce((sum, row) => sum + (row.END_STOCK_TAG_AMT || 0), 0);
+    const totalSaleAmt = data.reduce((sum, row) => sum + (row.SALE_AMT || 0), 0);
+    const totalStockQty = data.reduce((sum, row) => sum + (row.END_STOCK_QTY || 0), 0);
+    const uniqueProducts = new Set(data.map(row => row.PRDT_CD)).size;
+    const uniqueSeasons = new Set(data.map(row => row.SESN).filter(s => s)).size;
+    const channels = Array.from(new Set(data.map(row => row.CHANNEL))).join("/");
+    
+    const stockWeeks = calculateStockWeeks(totalStockAmt, totalSaleAmt, yyyymm);
+    const totalRatio = data.reduce((sum, row) => sum + (row.SALE_RATIO_MID_STOCK || 0), 0);
+    
+    return {
+      totalStockAmt,
+      totalSaleAmt,
+      totalStockQty,
+      uniqueProducts,
+      uniqueSeasons,
+      channels,
+      stockWeeks,
+      totalRatio,
+    };
+  }, [normalProductsBySeason.과시즌, yyyymm]);
+
+  const 정체재고Total = useMemo(() => {
+    const data = stagnantProducts;
+    if (data.length === 0) return null;
+    
+    const totalStockAmt = data.reduce((sum, row) => sum + (row.END_STOCK_TAG_AMT || 0), 0);
+    const totalSaleAmt = data.reduce((sum, row) => sum + (row.SALE_AMT || 0), 0);
+    const totalStockQty = data.reduce((sum, row) => sum + (row.END_STOCK_QTY || 0), 0);
+    const uniqueProducts = new Set(data.map(row => row.PRDT_CD)).size;
+    const uniqueSeasons = new Set(data.map(row => row.SESN).filter(s => s)).size;
+    const channels = Array.from(new Set(data.map(row => row.CHANNEL))).join("/");
+    
+    const stockWeeks = calculateStockWeeks(totalStockAmt, totalSaleAmt, yyyymm);
+    const totalRatio = data.reduce((sum, row) => sum + (row.SALE_RATIO_MID_STOCK || 0), 0);
+    
+    return {
+      totalStockAmt,
+      totalSaleAmt,
+      totalStockQty,
+      uniqueProducts,
+      uniqueSeasons,
+      channels,
+      stockWeeks,
+      totalRatio,
+    };
+  }, [stagnantProducts, yyyymm]);
 
   // 카드 데이터
   const cardData = useMemo(() => {
@@ -160,12 +336,64 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
     return total;
   }, [summaryData]);
 
+  // 중분류별 테이블 데이터
+  const tableData = useMemo(() => {
+    const items = ["전체", "신발", "모자", "가방", "기타"];
+    const stagnantData: Record<string, { stockAmt: number; stockQty: number; productCount: number; saleAmt: number }> = {};
+    const normalData: Record<string, { stockAmt: number; stockQty: number; productCount: number; saleAmt: number }> = {};
+
+    // 초기화
+    items.forEach(item => {
+      stagnantData[item] = { stockAmt: 0, stockQty: 0, productCount: 0, saleAmt: 0 };
+      normalData[item] = { stockAmt: 0, stockQty: 0, productCount: 0, saleAmt: 0 };
+    });
+
+    // 전체 재고금액 계산 (전체재고대비 % 계산용)
+    // 박스는 항상 전체 데이터를 표시하므로 원본 data를 사용
+    const totalStockAmt = data.reduce((sum, row) => sum + (row.END_STOCK_TAG_AMT || 0), 0);
+
+    // 중분류별로 집계 - 박스는 항상 전체 데이터를 표시하므로 원본 data를 사용
+    data.forEach(row => {
+      const status = getStockStatus(row);
+      const itemKey = row.ITEM_STD;
+
+      if (status === "정체재고") {
+        if (items.includes(itemKey)) {
+          stagnantData[itemKey].stockAmt += row.END_STOCK_TAG_AMT || 0;
+          stagnantData[itemKey].stockQty += row.END_STOCK_QTY || 0;
+          stagnantData[itemKey].productCount += 1;
+          stagnantData[itemKey].saleAmt += row.SALE_AMT || 0;
+        }
+        // 전체에도 추가
+        stagnantData["전체"].stockAmt += row.END_STOCK_TAG_AMT || 0;
+        stagnantData["전체"].stockQty += row.END_STOCK_QTY || 0;
+        stagnantData["전체"].productCount += 1;
+        stagnantData["전체"].saleAmt += row.SALE_AMT || 0;
+      } else {
+        if (items.includes(itemKey)) {
+          normalData[itemKey].stockAmt += row.END_STOCK_TAG_AMT || 0;
+          normalData[itemKey].stockQty += row.END_STOCK_QTY || 0;
+          normalData[itemKey].productCount += 1;
+          normalData[itemKey].saleAmt += row.SALE_AMT || 0;
+        }
+        // 전체에도 추가
+        normalData["전체"].stockAmt += row.END_STOCK_TAG_AMT || 0;
+        normalData["전체"].stockQty += row.END_STOCK_QTY || 0;
+        normalData["전체"].productCount += 1;
+        normalData["전체"].saleAmt += row.SALE_AMT || 0;
+      }
+    });
+
+    return { stagnantData, normalData, totalStockAmt };
+  }, [data, thresholdPercent]);
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("ko-KR", {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(value);
   };
+
 
   if (loading) {
     return (
@@ -189,22 +417,50 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
 
   return (
     <div className="card mb-6">
-      <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-        <span className="text-red-500">⚠️</span>
-        정체재고 분석
-      </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+          <span className="text-red-500">⚠️</span>
+          정체재고 분석
+        </h2>
+        {/* 기준 선택 탭 */}
+        <div className="flex gap-1">
+          {PRODUCT_TYPE_TABS.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setProductType(tab)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                productType === tab
+                  ? "bg-blue-500 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* 필터 컨트롤 */}
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-gray-700">기준월:</label>
-          <input
-            type="text"
+          <select
             value={yyyymm}
             onChange={(e) => setYyyymm(e.target.value)}
-            placeholder="202510"
-            className="px-3 py-1 border border-gray-300 rounded-md text-sm"
-          />
+            className="px-3 py-1 border border-gray-300 rounded-md text-sm bg-white"
+          >
+            {monthOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 정체재고 판별 기준 텍스트 */}
+        <div className="text-xs text-gray-600">
+          <span className="font-medium">정체재고 판별 기준:</span>{" "}
+          품번별 판매금액 ÷ (해당 중분류의 기말재고 합) &lt; {thresholdPercent}% 인 경우 정체재고로 분류
         </div>
 
         {/* 정체재고 기준 입력 (직접 입력: 예) 0.01, 0.02, 0.03 등 */}
@@ -262,124 +518,95 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
         </div>
       </div>
 
-      {/* 카드 요약 */}
+      {/* 테이블 형태의 요약 */}
       <div className="grid md:grid-cols-2 gap-4 mb-6">
+        {/* 정체재고 테이블 */}
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <h3 className="text-sm font-medium text-red-700 mb-2">정체재고</h3>
-          <div className="space-y-1 text-sm">
-            <div>
-              재고금액: <span className="font-bold">{formatCurrency(cardData.stagnant.stockAmt)}</span>
-              {(() => {
-                const totalStock = cardData.stagnant.stockAmt + cardData.normal.stockAmt;
-                const percentage = totalStock > 0 
-                  ? ((cardData.stagnant.stockAmt / totalStock) * 100).toFixed(2)
-                  : "0.00";
-                return (
-                  <span className="text-gray-600 ml-2">(전체재고대비 {percentage}%)</span>
-                );
-              })()}
-            </div>
-            <div>품번수: <span className="font-bold">{cardData.stagnant.productCount}개</span></div>
-            <div>매출금액: <span className="font-bold">{formatCurrency(cardData.stagnant.saleAmt)}</span></div>
+          <h3 className="text-sm font-medium text-red-700 mb-3">정체재고</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-red-300">
+                  <th className="text-left py-2 px-2 font-medium text-red-700">구분</th>
+                  <th className="text-right py-2 px-2 font-medium text-red-700">재고금액 (전체재고대비 %)</th>
+                  <th className="text-right py-2 px-2 font-medium text-red-700">재고수량</th>
+                  <th className="text-right py-2 px-2 font-medium text-red-700">품번수</th>
+                  <th className="text-right py-2 px-2 font-medium text-red-700">매출금액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {["전체", "신발", "모자", "가방", "기타"].map((item) => {
+                  const data = tableData.stagnantData[item];
+                  const percentage = tableData.totalStockAmt > 0 
+                    ? ((data.stockAmt / tableData.totalStockAmt) * 100).toFixed(2)
+                    : "0.00";
+                  const isSelected = itemFilter === item;
+                  return (
+                    <tr 
+                      key={item} 
+                      className={`border-b border-red-200 cursor-pointer hover:bg-red-100 transition-colors ${
+                        isSelected ? "bg-red-200 font-bold" : ""
+                      }`}
+                      onClick={() => setItemFilter(item as ItemFilter)}
+                    >
+                      <td className="py-2 px-2 font-medium">{item}</td>
+                      <td className="text-right py-2 px-2">
+                        {formatCurrency(data.stockAmt)} <span className="text-xs text-gray-600">({percentage}%)</span>
+                      </td>
+                      <td className="text-right py-2 px-2">{new Intl.NumberFormat("ko-KR").format(data.stockQty)}</td>
+                      <td className="text-right py-2 px-2">{data.productCount}개</td>
+                      <td className="text-right py-2 px-2">{formatCurrency(data.saleAmt)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
-        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-          <h3 className="text-sm font-medium text-green-700 mb-2">정상재고</h3>
-          <div className="space-y-1 text-sm">
-            <div>재고금액: <span className="font-bold">{formatCurrency(cardData.normal.stockAmt)}</span></div>
-            <div>품번수: <span className="font-bold">{cardData.normal.productCount}개</span></div>
-            <div>매출금액: <span className="font-bold">{formatCurrency(cardData.normal.saleAmt)}</span></div>
-          </div>
-        </div>
-      </div>
 
-      {/* 중분류 탭 (테이블 바로 위) */}
-      <div className="mb-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-700">중분류:</label>
-          <div className="flex gap-1">
-            {ITEM_TABS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setItemFilter(tab)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  itemFilter === tab
-                    ? "bg-indigo-500 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+        {/* 정상재고 테이블 */}
+        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+          <h3 className="text-sm font-medium text-green-700 mb-3">정상재고</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-green-300">
+                  <th className="text-left py-2 px-2 font-medium text-green-700">구분</th>
+                  <th className="text-right py-2 px-2 font-medium text-green-700">재고금액</th>
+                  <th className="text-right py-2 px-2 font-medium text-green-700">재고수량</th>
+                  <th className="text-right py-2 px-2 font-medium text-green-700">품번수</th>
+                  <th className="text-right py-2 px-2 font-medium text-green-700">매출금액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {["전체", "신발", "모자", "가방", "기타"].map((item) => {
+                  const data = tableData.normalData[item];
+                  return (
+                    <tr key={item} className="border-b border-green-200">
+                      <td className="py-2 px-2 font-medium">{item}</td>
+                      <td className="text-right py-2 px-2">{formatCurrency(data.stockAmt)}</td>
+                      <td className="text-right py-2 px-2">{new Intl.NumberFormat("ko-KR").format(data.stockQty)}</td>
+                      <td className="text-right py-2 px-2">{data.productCount}개</td>
+                      <td className="text-right py-2 px-2">{formatCurrency(data.saleAmt)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
 
       {/* 품번 리스트 테이블 */}
       <div className="space-y-6">
-        {/* 정체재고 테이블 */}
-        {stagnantProducts.length > 0 && (
-          <div>
-            <h3 className="text-lg font-semibold text-red-700 mb-3 flex items-center gap-2">
-              <span className="text-red-500">⚠️</span>
-              정체재고 - {stagnantProducts.length}개
-            </h3>
-            <div className="overflow-x-auto overflow-y-auto border border-gray-200 rounded-lg" style={{ maxHeight: "600px" }}>
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-red-50 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">중분류</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">품번</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">시즌</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">채널</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">매출금액</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고금액</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">비율</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase">상태</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {stagnantProducts.map((row, idx) => (
-                    <tr
-                      key={`${row.PRDT_CD}-${row.CHANNEL}-${idx}`}
-                      className="bg-red-50 hover:bg-red-100"
-                    >
-                      <td className="px-4 py-3 text-sm text-gray-900">{row.ITEM_STD}</td>
-                      <td className="px-4 py-3 text-sm font-mono text-gray-900">{row.PRDT_CD}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{row.SESN || "-"}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{row.CHANNEL}</td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-900">
-                        {formatCurrency(row.SALE_AMT || 0)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-900">
-                        {formatCurrency(row.END_STOCK_TAG_AMT || 0)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-right text-gray-600">
-                        {row.SALE_RATIO_MID_STOCK !== null
-                          ? `${(row.SALE_RATIO_MID_STOCK * 100).toFixed(4)}%`
-                          : "-"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center">
-                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {row.STOCK_STATUS}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* 정상재고 테이블 */}
-        {normalProducts.length > 0 && !showOnlyStagnant && (
+        {/* 당시즌 정상재고 테이블 */}
+        {normalProductsBySeason.당시즌.length > 0 && !showOnlyStagnant && (
           <div>
             <h3 className="text-lg font-semibold text-green-700 mb-3 flex items-center gap-2">
               <span className="text-green-500">✓</span>
-              정상재고 - {normalProducts.length}개
+              당시즌 정상재고 - {normalProductsBySeason.당시즌.length}개
             </h3>
-            <div className="overflow-x-auto overflow-y-auto border border-gray-200 rounded-lg" style={{ maxHeight: "600px" }}>
+            <div className="overflow-x-auto overflow-y-auto border border-gray-200 rounded-lg" style={{ maxHeight: "300px" }}>
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-green-50 sticky top-0 z-10">
                   <tr>
@@ -387,6 +614,8 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">품번</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">시즌</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">채널</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고주수</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고수량</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">매출금액</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고금액</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">비율</th>
@@ -394,7 +623,34 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {normalProducts.map((row, idx) => (
+                  {/* 총액 행 */}
+                  {당시즌Total && (
+                    <tr className="bg-gray-100 font-semibold">
+                      <td className="px-4 py-3 text-sm text-gray-900">(Total)</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{당시즌Total.uniqueProducts}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{당시즌Total.uniqueSeasons}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{당시즌Total.channels}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {당시즌Total.stockWeeks !== null ? `${당시즌Total.stockWeeks.toFixed(0)}주` : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {new Intl.NumberFormat("ko-KR").format(당시즌Total.totalStockQty)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(당시즌Total.totalSaleAmt)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(당시즌Total.totalStockAmt)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-600">
+                        {당시즌Total.totalRatio !== null
+                          ? `${(당시즌Total.totalRatio * 100).toFixed(4)}%`
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center"></td>
+                    </tr>
+                  )}
+                  {normalProductsBySeason.당시즌.map((row, idx) => (
                     <tr
                       key={`${row.PRDT_CD}-${row.CHANNEL}-${idx}`}
                       className="bg-green-50 hover:bg-green-100"
@@ -403,6 +659,19 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
                       <td className="px-4 py-3 text-sm font-mono text-gray-900">{row.PRDT_CD}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{row.SESN || "-"}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{row.CHANNEL}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {(() => {
+                          const stockWeeks = calculateStockWeeks(
+                            row.END_STOCK_TAG_AMT || 0,
+                            row.SALE_AMT || 0,
+                            row.YYYYMM || yyyymm
+                          );
+                          return stockWeeks !== null ? `${stockWeeks.toFixed(0)}주` : "-";
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {new Intl.NumberFormat("ko-KR").format(row.END_STOCK_QTY || 0)}
+                      </td>
                       <td className="px-4 py-3 text-sm text-right text-gray-900">
                         {formatCurrency(row.SALE_AMT || 0)}
                       </td>
@@ -416,7 +685,7 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
                       </td>
                       <td className="px-4 py-3 text-sm text-center">
                         <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          {row.STOCK_STATUS}
+                          {getStockStatus(row)}
                         </span>
                       </td>
                     </tr>
@@ -426,12 +695,298 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
             </div>
           </div>
         )}
-      </div>
 
-      {/* 설명 */}
-      <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-600">
-        <p className="font-medium mb-1">정체재고 판별 기준:</p>
-        <p>품번별 판매금액 ÷ (해당 중분류의 기말재고 합) &lt; 0.01% (0.0001) 인 경우 정체재고로 분류</p>
+        {/* 차기시즌 정상재고 테이블 */}
+        {normalProductsBySeason.차기시즌.length > 0 && !showOnlyStagnant && (
+          <div>
+            <h3 className="text-lg font-semibold text-green-700 mb-3 flex items-center gap-2">
+              <span className="text-green-500">✓</span>
+              차기시즌 정상재고 - {normalProductsBySeason.차기시즌.length}개
+            </h3>
+            <div className="overflow-x-auto overflow-y-auto border border-gray-200 rounded-lg" style={{ maxHeight: "300px" }}>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-green-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">중분류</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">품번</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">시즌</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">채널</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고주수</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고수량</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">매출금액</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고금액</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">비율</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase">상태</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {/* 총액 행 */}
+                  {차기시즌Total && (
+                    <tr className="bg-gray-100 font-semibold">
+                      <td className="px-4 py-3 text-sm text-gray-900">(Total)</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{차기시즌Total.uniqueProducts}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{차기시즌Total.uniqueSeasons}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{차기시즌Total.channels}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {차기시즌Total.stockWeeks !== null ? `${차기시즌Total.stockWeeks.toFixed(0)}주` : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {new Intl.NumberFormat("ko-KR").format(차기시즌Total.totalStockQty)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(차기시즌Total.totalSaleAmt)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(차기시즌Total.totalStockAmt)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-600">
+                        {차기시즌Total.totalRatio !== null
+                          ? `${(차기시즌Total.totalRatio * 100).toFixed(4)}%`
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center"></td>
+                    </tr>
+                  )}
+                  {normalProductsBySeason.차기시즌.map((row, idx) => (
+                    <tr
+                      key={`${row.PRDT_CD}-${row.CHANNEL}-${idx}`}
+                      className="bg-green-50 hover:bg-green-100"
+                    >
+                      <td className="px-4 py-3 text-sm text-gray-900">{row.ITEM_STD}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-gray-900">{row.PRDT_CD}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{row.SESN || "-"}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{row.CHANNEL}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {(() => {
+                          const stockWeeks = calculateStockWeeks(
+                            row.END_STOCK_TAG_AMT || 0,
+                            row.SALE_AMT || 0,
+                            row.YYYYMM || yyyymm
+                          );
+                          return stockWeeks !== null ? `${stockWeeks.toFixed(0)}주` : "-";
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {new Intl.NumberFormat("ko-KR").format(row.END_STOCK_QTY || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(row.SALE_AMT || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(row.END_STOCK_TAG_AMT || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-600">
+                        {row.SALE_RATIO_MID_STOCK !== null
+                          ? `${(row.SALE_RATIO_MID_STOCK * 100).toFixed(4)}%`
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center">
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          {getStockStatus(row)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* 과시즌 정상재고 테이블 */}
+        {normalProductsBySeason.과시즌.length > 0 && !showOnlyStagnant && (
+          <div>
+            <h3 className="text-lg font-semibold text-green-700 mb-3 flex items-center gap-2">
+              <span className="text-green-500">✓</span>
+              과시즌 정상재고 - {normalProductsBySeason.과시즌.length}개
+            </h3>
+            <div className="overflow-x-auto overflow-y-auto border border-gray-200 rounded-lg" style={{ maxHeight: "300px" }}>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-green-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">중분류</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">품번</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">시즌</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">채널</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고주수</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고수량</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">매출금액</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고금액</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">비율</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase">상태</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {/* 총액 행 */}
+                  {과시즌Total && (
+                    <tr className="bg-gray-100 font-semibold">
+                      <td className="px-4 py-3 text-sm text-gray-900">(Total)</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{과시즌Total.uniqueProducts}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{과시즌Total.uniqueSeasons}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{과시즌Total.channels}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {과시즌Total.stockWeeks !== null ? `${과시즌Total.stockWeeks.toFixed(0)}주` : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {new Intl.NumberFormat("ko-KR").format(과시즌Total.totalStockQty)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(과시즌Total.totalSaleAmt)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(과시즌Total.totalStockAmt)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-600">
+                        {과시즌Total.totalRatio !== null
+                          ? `${(과시즌Total.totalRatio * 100).toFixed(4)}%`
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center"></td>
+                    </tr>
+                  )}
+                  {normalProductsBySeason.과시즌.map((row, idx) => (
+                    <tr
+                      key={`${row.PRDT_CD}-${row.CHANNEL}-${idx}`}
+                      className="bg-green-50 hover:bg-green-100"
+                    >
+                      <td className="px-4 py-3 text-sm text-gray-900">{row.ITEM_STD}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-gray-900">{row.PRDT_CD}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{row.SESN || "-"}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{row.CHANNEL}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {(() => {
+                          const stockWeeks = calculateStockWeeks(
+                            row.END_STOCK_TAG_AMT || 0,
+                            row.SALE_AMT || 0,
+                            row.YYYYMM || yyyymm
+                          );
+                          return stockWeeks !== null ? `${stockWeeks.toFixed(0)}주` : "-";
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {new Intl.NumberFormat("ko-KR").format(row.END_STOCK_QTY || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(row.SALE_AMT || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(row.END_STOCK_TAG_AMT || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-600">
+                        {row.SALE_RATIO_MID_STOCK !== null
+                          ? `${(row.SALE_RATIO_MID_STOCK * 100).toFixed(4)}%`
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center">
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          {getStockStatus(row)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* 정체재고 테이블 */}
+        {stagnantProducts.length > 0 && (
+          <div>
+            <h3 className="text-lg font-semibold text-red-700 mb-3 flex items-center gap-2">
+              <span className="text-red-500">⚠️</span>
+              정체재고 - {stagnantProducts.length}개
+            </h3>
+            <div className="overflow-x-auto overflow-y-auto border border-gray-200 rounded-lg" style={{ maxHeight: "300px" }}>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-red-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">중분류</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">품번</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">시즌</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">채널</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고주수</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고수량</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">매출금액</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">재고금액</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">비율</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase">상태</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {/* 총액 행 */}
+                  {정체재고Total && (
+                    <tr className="bg-gray-100 font-semibold">
+                      <td className="px-4 py-3 text-sm text-gray-900">(Total)</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{정체재고Total.uniqueProducts}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{정체재고Total.uniqueSeasons}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{정체재고Total.channels}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {정체재고Total.stockWeeks !== null ? `${정체재고Total.stockWeeks.toFixed(0)}주` : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {new Intl.NumberFormat("ko-KR").format(정체재고Total.totalStockQty)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(정체재고Total.totalSaleAmt)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(정체재고Total.totalStockAmt)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-600">
+                        {정체재고Total.totalRatio !== null
+                          ? `${(정체재고Total.totalRatio * 100).toFixed(4)}%`
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center"></td>
+                    </tr>
+                  )}
+                  {stagnantProducts.map((row, idx) => (
+                    <tr
+                      key={`${row.PRDT_CD}-${row.CHANNEL}-${idx}`}
+                      className="bg-red-50 hover:bg-red-100"
+                    >
+                      <td className="px-4 py-3 text-sm text-gray-900">{row.ITEM_STD}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-gray-900">{row.PRDT_CD}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{row.SESN || "-"}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{row.CHANNEL}</td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {(() => {
+                          const stockWeeks = calculateStockWeeks(
+                            row.END_STOCK_TAG_AMT || 0,
+                            row.SALE_AMT || 0,
+                            row.YYYYMM || yyyymm
+                          );
+                          return stockWeeks !== null ? `${stockWeeks.toFixed(0)}주` : "-";
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {new Intl.NumberFormat("ko-KR").format(row.END_STOCK_QTY || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(row.SALE_AMT || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-900">
+                        {formatCurrency(row.END_STOCK_TAG_AMT || 0)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right text-gray-600">
+                        {row.SALE_RATIO_MID_STOCK !== null
+                          ? `${(row.SALE_RATIO_MID_STOCK * 100).toFixed(4)}%`
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center">
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          {getStockStatus(row)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
