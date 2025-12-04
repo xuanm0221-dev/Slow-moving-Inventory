@@ -30,10 +30,35 @@ const ITEM_COLORS: Record<string, string> = {
 };
 
 export default function StagnantStockSection({ brand }: StagnantStockSectionProps) {
+  // 현재 월까지의 옵션 생성 함수
+  const generateMonthOptions = useMemo((): string[] => {
+    const options: string[] = [];
+    const startDate = new Date(2024, 0, 1); // 2024년 1월
+    const endDate = new Date(); // 현재 날짜
+    
+    let currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      options.push(`${year}${month}`);
+      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+    }
+    
+    return options.reverse(); // 최신 월이 먼저 나오도록 역순 정렬
+  }, []);
+
+  // 초기값을 가장 최근 월로 설정
+  const getInitialMonth = (): string => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    return `${year}${month}`;
+  };
+
   const [data, setData] = useState<StagnantStockRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [yyyymm, setYyyymm] = useState("202510");
+  const [yyyymm, setYyyymm] = useState(getInitialMonth());
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("전체");
   const [itemFilter, setItemFilter] = useState<ItemFilter>("전체");
   const [productType, setProductType] = useState<ProductTypeFilter>("스타일코드기준");
@@ -447,13 +472,17 @@ export default function StagnantStockSection({ brand }: StagnantStockSectionProp
           <select
             value={yyyymm}
             onChange={(e) => setYyyymm(e.target.value)}
-            className="px-3 py-1 border border-gray-300 rounded-md text-sm bg-white"
+            className="px-3 py-1 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
           >
-            {monthOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
+            {generateMonthOptions.map((month) => {
+              const year = month.substring(0, 4);
+              const monthNum = month.substring(4, 6);
+              return (
+                <option key={month} value={month}>
+                  {year}.{monthNum}
+                </option>
+              );
+            })}
           </select>
         </div>
 
