@@ -232,48 +232,75 @@ const ChartTooltip = ({ active, payload, label }: ChartTooltipProps) => {
 
 export default function StagnantStockChart({ brand, channelFilter, productType, thresholdPercent }: StagnantStockChartProps) {
   const [chartData, setChartData] = useState<Record<string, StagnantStockRow[]>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // 차트용 월별 데이터 수집 (2023-11 ~ 2025-10)
   useEffect(() => {
     const fetchChartData = async () => {
-      const months: string[] = [];
-      // 2023년 11월 ~ 12월 (전년)
-      for (let month = 11; month <= 12; month++) {
-        months.push(`2023${month.toString().padStart(2, '0')}`);
-      }
-      // 2024년 1월 ~ 12월
-      for (let month = 1; month <= 12; month++) {
-        months.push(`2024${month.toString().padStart(2, '0')}`);
-      }
-      // 2025년 1월 ~ 10월
-      for (let month = 1; month <= 10; month++) {
-        months.push(`2025${month.toString().padStart(2, '0')}`);
-      }
-
-      const channelParam = channelFilter === "전체" ? "ALL" : channelFilter;
-      const productTypeParam = productType === "컬러사이즈기준" ? "scs" : "cd";
+      setLoading(true);
+      setError(null);
       
-      const promises = months.map(async (month) => {
-        try {
-          const response = await fetch(
-            `/api/snow/stagnant-stock?yyyymm=${month}&brdCd=${BRAND_CODE_MAP[brand]}&channel=${channelParam}&productType=${productTypeParam}`
-          );
-          if (!response.ok) {
-            return { month, data: [] };
-          }
-          const result = await response.json();
-          return { month, data: result.data || [] };
-        } catch (err) {
-          return { month, data: [] };
+      try {
+        const months: string[] = [];
+        // 2023년 11월 ~ 12월 (전년)
+        for (let month = 11; month <= 12; month++) {
+          months.push(`2023${month.toString().padStart(2, '0')}`);
         }
-      });
+        // 2024년 1월 ~ 12월
+        for (let month = 1; month <= 12; month++) {
+          months.push(`2024${month.toString().padStart(2, '0')}`);
+        }
+        // 2025년 1월 ~ 10월
+        for (let month = 1; month <= 10; month++) {
+          months.push(`2025${month.toString().padStart(2, '0')}`);
+        }
 
-      const results = await Promise.all(promises);
-      const chartDataMap: Record<string, StagnantStockRow[]> = {};
-      results.forEach(({ month, data }) => {
-        chartDataMap[month] = data;
-      });
-      setChartData(chartDataMap);
+        const channelParam = channelFilter === "전체" ? "ALL" : channelFilter;
+        const productTypeParam = productType === "컬러사이즈기준" ? "scs" : "cd";
+        
+        const promises = months.map(async (month) => {
+          try {
+            const response = await fetch(
+              `/api/snow/stagnant-stock?yyyymm=${month}&brdCd=${BRAND_CODE_MAP[brand]}&channel=${channelParam}&productType=${productTypeParam}`
+            );
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
+            const result = await response.json();
+            if (result.error) {
+              throw new Error(result.error);
+            }
+            return { month, data: result.data || [] };
+          } catch (err) {
+            console.error(`Error fetching data for ${month}:`, err);
+            return { month, data: [], error: err instanceof Error ? err.message : String(err) };
+          }
+        });
+
+        const results = await Promise.all(promises);
+        const chartDataMap: Record<string, StagnantStockRow[]> = {};
+        const errors: string[] = [];
+        
+        results.forEach(({ month, data, error }) => {
+          if (error) {
+            errors.push(`${month}: ${error}`);
+          }
+          chartDataMap[month] = data;
+        });
+        
+        setChartData(chartDataMap);
+        
+        if (errors.length > 0) {
+          setError(`일부 데이터를 불러오는데 실패했습니다: ${errors.slice(0, 3).join(', ')}${errors.length > 3 ? '...' : ''}`);
+        }
+      } catch (err) {
+        console.error("Chart data fetch error:", err);
+        setError(err instanceof Error ? err.message : "데이터를 불러오는데 실패했습니다.");
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchChartData();
@@ -349,6 +376,34 @@ export default function StagnantStockChart({ brand, channelFilter, productType, 
 
     return chartDataArray;
   }, [chartData, thresholdPercent]);
+
+  if (loading) {
+    return (
+      <div className="card mb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">재고금액 시즌별 추이</h3>
+        <div className="w-full h-[400px] flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-gray-500">데이터 로딩 중...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="card mb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">재고금액 시즌별 추이</h3>
+        <div className="w-full h-[400px] flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-red-500 text-2xl mb-2">✕</div>
+            <p className="text-red-500 font-medium">{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (processedChartData.length === 0) {
     return null;
