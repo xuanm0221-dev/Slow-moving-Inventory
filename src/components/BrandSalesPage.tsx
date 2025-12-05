@@ -56,6 +56,9 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
   const [actualArrivalData, setActualArrivalData] = useState<ActualArrivalSummaryData | null>(null);
   const [stockWeekWindow, setStockWeekWindow] = useState<StockWeekWindow>(1);
   const [productTypeTab, setProductTypeTab] = useState<ProductTypeTab>("전체"); // 상품 타입 탭 (전체/주력/아울렛)
+  type ProductTypeFilter = "스타일" | "컬러" | "사이즈" | "컬러&사이즈";
+  const [productType, setProductType] = useState<ProductTypeFilter>("스타일"); // 정체재고 분석 기준 (스타일/컬러/사이즈/컬러&사이즈)
+  const [showStockWeeksHeatmap, setShowStockWeeksHeatmap] = useState(false); // 재고주수 히트맵 토글 상태
   
   // 특정 아이템의 stockWeek 변경 핸들러
   const handleStockWeekChange = (itemTab: ItemTab, value: number) => {
@@ -373,89 +376,110 @@ export default function BrandSalesPage({ brand, title }: BrandSalesPageProps) {
               </div>
             )}
 
-            {/* 2. 2025년 재고주수 표 */}
-            {salesTabData && inventoryTabDataWithForecast && inventoryData?.daysInMonth && (
-              <div className="card mb-4">
-                <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            {/* 24년, 25년 재고주수 히트맵 */}
+            <div className="card mb-6">
+              <button
+                onClick={() => setShowStockWeeksHeatmap(!showStockWeeksHeatmap)}
+                className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors rounded-t-lg"
+              >
+                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                   <span className="text-yellow-500">📅</span>
-                  2025년 재고주수
+                  24년, 25년 재고주수 히트맵
                 </h2>
-                <StockWeeksTable
-                  inventoryData={inventoryTabDataWithForecast}
-                  salesData={salesTabData}
-                  daysInMonth={inventoryData.daysInMonth}
-                  stockWeek={stockWeeks[selectedTab]}
-                  year="2025"
-                  stockWeekWindow={stockWeekWindow}
-                  productTypeTab={productTypeTab}
-                />
+                <span className="text-gray-500 text-lg">
+                  {showStockWeeksHeatmap ? '▼' : '▶'}
+                </span>
+              </button>
+              
+              {showStockWeeksHeatmap && (
+                <div className="px-4 pb-4">
+                  {/* 2. 2025년 재고주수 표 */}
+                  {salesTabData && inventoryTabDataWithForecast && inventoryData?.daysInMonth && (
+                    <div className="card mb-4">
+                      <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <span className="text-yellow-500">📅</span>
+                        2025년 재고주수
+                      </h2>
+                      <StockWeeksTable
+                        inventoryData={inventoryTabDataWithForecast}
+                        salesData={salesTabData}
+                        daysInMonth={inventoryData.daysInMonth}
+                        stockWeek={stockWeeks[selectedTab]}
+                        year="2025"
+                        stockWeekWindow={stockWeekWindow}
+                        productTypeTab={productTypeTab}
+                      />
 
-                {/* 재고주수 계산식 범례 */}
-                <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <h3 className="text-xs font-medium text-yellow-600 mb-2">📅 재고주수 계산식</h3>
-                  <div className="grid md:grid-cols-2 gap-4 text-xs">
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-gray-600">1. 전체주수 = 전체재고 ÷ (전체판매 ÷ 일수 × 7)</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">2. 대리상주수 = 대리상재고 ÷ (대리상판매 ÷ 일수 × 7)</span>
+                      {/* 재고주수 계산식 범례 */}
+                      <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <h3 className="text-xs font-medium text-yellow-600 mb-2">📅 재고주수 계산식</h3>
+                        <div className="grid md:grid-cols-2 gap-4 text-xs">
+                          <div className="space-y-2">
+                            <div>
+                              <span className="text-gray-600">1. 전체주수 = 전체재고 ÷ (전체판매 ÷ 일수 × 7)</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">2. 대리상주수 = 대리상재고 ÷ (대리상판매 ÷ 일수 × 7)</span>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-gray-600 space-y-1">
+                              <div>3. 창고재고주수(전체)=창고재고(전체) ÷ [(주력 대리상판매 + 주력 직영판매 + 아울렛 직영판매) ÷ 일수 × 7]</div>
+                              <div className="pl-2">ㄴ 주력 재고주수=창고 주력재고 ÷ [(주력 대리상판매 + 주력 직영판매) ÷ 일수 × 7)]</div>
+                              <div className="pl-2">ㄴ 아울렛 재고주수 = 창고 아울렛재고 ÷ (아울렛상품 직영판매 ÷ 일수 × 7)</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-4 pt-3 border-t border-gray-300">
+                          <div className="grid md:grid-cols-2 gap-4 text-xs">
+                            <div>
+                              <span className="text-gray-500 font-medium">주력상품 분류 기준:</span>{" "}
+                              <span className="text-gray-600">INTRO/FOCUS 또는 24FW~26SS 시즌</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 font-medium">아울렛 상품 분류 기준:</span>{" "}
+                              <span className="text-gray-600">OUTLET/CARE/DONE 또는 미지정에서 24FW이전시즌</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <div className="text-gray-600 space-y-1">
-                        <div>3. 창고재고주수(전체)=창고재고(전체) ÷ [(주력 대리상판매 + 주력 직영판매 + 아울렛 직영판매) ÷ 일수 × 7]</div>
-                        <div className="pl-2">ㄴ 주력 재고주수=창고 주력재고 ÷ [(주력 대리상판매 + 주력 직영판매) ÷ 일수 × 7)]</div>
-                        <div className="pl-2">ㄴ 아울렛 재고주수 = 창고 아울렛재고 ÷ (아울렛상품 직영판매 ÷ 일수 × 7)</div>
-                      </div>
+                  )}
+
+                  {/* 3. 2024년 재고주수 표 */}
+                  {salesTabData && inventoryTabData && inventoryData?.daysInMonth && (
+                    <div className="card mb-6">
+                      <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <span className="text-yellow-500">📅</span>
+                        2024년 재고주수
+                      </h2>
+                      <StockWeeksTable
+                        inventoryData={inventoryTabData}
+                        salesData={salesTabData}
+                        daysInMonth={inventoryData.daysInMonth}
+                        stockWeek={stockWeeks[selectedTab]}
+                        year="2024"
+                        stockWeekWindow={stockWeekWindow}
+                        productTypeTab={productTypeTab}
+                      />
                     </div>
-                  </div>
-                  <div className="mt-4 pt-3 border-t border-gray-300">
-                    <div className="grid md:grid-cols-2 gap-4 text-xs">
-                      <div>
-                        <span className="text-gray-500 font-medium">주력상품 분류 기준:</span>{" "}
-                        <span className="text-gray-600">INTRO/FOCUS 또는 24FW~26SS 시즌</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500 font-medium">아울렛 상품 분류 기준:</span>{" "}
-                        <span className="text-gray-600">OUTLET/CARE/DONE 또는 미지정에서 24FW이전시즌</span>
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              </div>
-            )}
-
-            {/* 3. 2024년 재고주수 표 */}
-            {salesTabData && inventoryTabData && inventoryData?.daysInMonth && (
-              <div className="card mb-6">
-                <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                  <span className="text-yellow-500">📅</span>
-                  2024년 재고주수
-                </h2>
-                <StockWeeksTable
-                  inventoryData={inventoryTabData}
-                  salesData={salesTabData}
-                  daysInMonth={inventoryData.daysInMonth}
-                  stockWeek={stockWeeks[selectedTab]}
-                  year="2024"
-                  stockWeekWindow={stockWeekWindow}
-                  productTypeTab={productTypeTab}
-                />
-              </div>
-            )}
+              )}
+            </div>
 
             {/* 재고금액 시즌별 추이 차트 */}
             <StagnantStockChart 
               brand={brand} 
               channelFilter="전체"
-              productType="스타일코드기준"
+              productType={productType}
+              setProductType={setProductType}
               thresholdPercent={0.01}
             />
 
             {/* 8. 정체재고 분석 섹션 (새로 추가) */}
             <div className="mt-6">
-              <StagnantStockSection brand={brand} />
+              <StagnantStockSection brand={brand} productType={productType} setProductType={setProductType} />
             </div>
 
             {/* 재고 및 판매 데이터 (4개 섹션 통합) */}

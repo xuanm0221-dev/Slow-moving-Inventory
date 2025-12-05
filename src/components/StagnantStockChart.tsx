@@ -14,10 +14,13 @@ import {
 } from "recharts";
 import { Brand, StagnantStockRow } from "@/types/sales";
 
+type ProductTypeFilter = "스타일" | "컬러" | "사이즈" | "컬러&사이즈";
+
 interface StagnantStockChartProps {
   brand: Brand;
   channelFilter: "전체" | "FR" | "OR";
-  productType: "스타일코드기준" | "컬러사이즈기준";
+  productType: ProductTypeFilter;
+  setProductType: (type: ProductTypeFilter) => void;
   thresholdPercent: number;
 }
 
@@ -230,7 +233,7 @@ const ChartTooltip = ({ active, payload, label }: ChartTooltipProps) => {
   );
 };
 
-export default function StagnantStockChart({ brand, channelFilter, productType, thresholdPercent }: StagnantStockChartProps) {
+export default function StagnantStockChart({ brand, channelFilter, productType, setProductType, thresholdPercent }: StagnantStockChartProps) {
   const [chartData, setChartData] = useState<Record<string, StagnantStockRow[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -257,7 +260,21 @@ export default function StagnantStockChart({ brand, channelFilter, productType, 
         }
 
         const channelParam = channelFilter === "전체" ? "ALL" : channelFilter;
-        const productTypeParam = productType === "컬러사이즈기준" ? "scs" : "cd";
+        const getProductTypeParam = (type: ProductTypeFilter): string => {
+          switch (type) {
+            case "스타일":
+              return "cd";
+            case "컬러":
+              return "color";
+            case "사이즈":
+              return "size";
+            case "컬러&사이즈":
+              return "color_size";
+            default:
+              return "cd";
+          }
+        };
+        const productTypeParam = getProductTypeParam(productType);
         
         const promises = months.map(async (month) => {
           try {
@@ -386,10 +403,36 @@ export default function StagnantStockChart({ brand, channelFilter, productType, 
     return chartDataArray;
   }, [chartData, thresholdPercent]);
 
+  // 공통 헤더 컴포넌트
+  const ChartHeader = () => (
+    <div className="flex items-center justify-between mb-4">
+      <h3 className="text-lg font-semibold text-gray-800">재고금액 시즌별 추이</h3>
+      {/* 기준 선택 탭 */}
+      <div className="flex gap-0.5 bg-gray-100 p-1 rounded-lg">
+        {(["스타일", "컬러", "사이즈", "컬러&사이즈"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setProductType(tab)}
+            className={`relative px-5 py-2.5 rounded-md text-sm font-semibold transition-all duration-200 ${
+              productType === tab
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+            }`}
+          >
+            {tab}
+            {productType === tab && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full"></span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="card mb-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">재고금액 시즌별 추이</h3>
+        <ChartHeader />
         <div className="w-full h-[400px] flex items-center justify-center">
           <div className="flex flex-col items-center gap-4">
             <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -403,7 +446,7 @@ export default function StagnantStockChart({ brand, channelFilter, productType, 
   if (error) {
     return (
       <div className="card mb-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">재고금액 시즌별 추이</h3>
+        <ChartHeader />
         <div className="w-full h-[400px] flex items-center justify-center">
           <div className="text-center">
             <div className="text-red-500 text-2xl mb-2">✕</div>
@@ -420,7 +463,7 @@ export default function StagnantStockChart({ brand, channelFilter, productType, 
 
   return (
     <div className="card mb-6">
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">재고금액 시즌별 추이</h3>
+      <ChartHeader />
       <div className="w-full h-[400px]">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
@@ -692,6 +735,14 @@ export default function StagnantStockChart({ brand, channelFilter, productType, 
             />
           </ComposedChart>
         </ResponsiveContainer>
+      </div>
+      {/* 시즌 분류 기준 설명 */}
+      <div className="text-center mt-2 mb-2">
+        <p className="text-lg text-gray-500" style={{ fontSize: '18px' }}>
+          ※ 시즌 분류는 정체재고를 제외한 정상재고에 대해서만 적용됩니다. 
+          2025년 기준: 시즌 코드 25=당시즌, 26=차기시즌, 그 외=과시즌 | 
+          2024년 기준: 시즌 코드 24=당시즌, 25=차기시즌, 그 외=과시즌
+        </p>
       </div>
     </div>
   );

@@ -30,7 +30,7 @@ export async function GET(request) {
   const yyyymm = searchParams.get("yyyymm") || "202510";
   const brdCd = searchParams.get("brdCd") || "M"; // M=MLB, I=MLB KIDS, X=DISCOVERY
   const channel = searchParams.get("channel") || "ALL"; // ALL, FR, OR
-  const productType = searchParams.get("productType") || "scs"; // "scs" 또는 "cd"
+  const productType = searchParams.get("productType") || "cd"; // "cd", "color", "size", "color_size", "scs" (호환성)
 
   // yyyymm을 날짜 범위로 변환 (예: "202510" → "2025-10-01" ~ "2025-10-31")
   const year = yyyymm.substring(0, 4);
@@ -102,10 +102,13 @@ export async function GET(request) {
                   , p.STD_YYYYMM            AS yyyymm
                   , CASE 
                       WHEN d.fr_or_cls = 'HQ' THEN 'OR'
+                      WHEN d.fr_or_cls IS NULL THEN 'UNKNOWN'
                       ELSE d.fr_or_cls
                     END AS channel
-                  , ${productType === "scs" ? "s.prdt_scs_cd" : "s.prdt_cd"} AS product_key
                   , s.prdt_cd
+                  , s.color_cd
+                  , s.size_cd
+                  , s.prdt_scs_cd
                   , i.item_std
                   , SUM(s.tag_amt)           AS sale_amt
             FROM fnf.chn.DW_SALE s
@@ -113,14 +116,18 @@ export async function GET(request) {
               ON s.SALE_DT >= p.START_DATE
              AND s.SALE_DT <= p.END_DATE
              AND s.brd_cd = p.BRD_CD
-            JOIN fnf.chn.dw_shop_wh_detail d
+            LEFT JOIN fnf.chn.dw_shop_wh_detail d
               ON s.shop_id = d.oa_map_shop_id
             JOIN item i
               ON s.prdt_cd = i.prdt_cd
             WHERE i.item_std IN ('신발', '모자', '가방', '기타')
             GROUP BY s.brd_cd, p.div, p.STD_YYYYMM, 
-                     CASE WHEN d.fr_or_cls = 'HQ' THEN 'OR' ELSE d.fr_or_cls END, 
-                     ${productType === "scs" ? "s.prdt_scs_cd" : "s.prdt_cd"}, s.prdt_cd, i.item_std
+                     CASE 
+                       WHEN d.fr_or_cls = 'HQ' THEN 'OR'
+                       WHEN d.fr_or_cls IS NULL THEN 'UNKNOWN'
+                       ELSE d.fr_or_cls 
+                     END, 
+                     s.prdt_cd, s.color_cd, s.size_cd, s.prdt_scs_cd, i.item_std
         )
         , STOCK AS (
             SELECT  a.brd_cd
@@ -128,16 +135,19 @@ export async function GET(request) {
                   , p.STD_YYYYMM                  AS yyyymm
                   , CASE 
                       WHEN b.fr_or_cls = 'HQ' THEN 'OR'
+                      WHEN b.fr_or_cls IS NULL THEN 'UNKNOWN'
                       ELSE b.fr_or_cls
                     END AS channel
-                  , ${productType === "scs" ? "a.prdt_scs_cd" : "a.prdt_cd"} AS product_key
                   , a.prdt_cd
+                  , a.color_cd
+                  , a.size_cd
+                  , a.prdt_scs_cd
                   , i.item_std
                   , i.sesn
                   , SUM(a.STOCK_TAG_AMT_EXPECTED) AS end_stock_tag_amt
                   , SUM(a.stock_qty_expected) AS end_stock_qty
             FROM fnf.chn.dw_stock_m a
-            JOIN fnf.chn.dw_shop_wh_detail b
+            LEFT JOIN fnf.chn.dw_shop_wh_detail b
               ON a.shop_id = b.oa_map_shop_id
             JOIN PARAM p
               ON a.yymm   = p.STD_YYYYMM
@@ -146,36 +156,55 @@ export async function GET(request) {
               ON a.prdt_cd = i.prdt_cd
             WHERE i.item_std IN ('신발', '모자', '가방', '기타')
             GROUP BY a.brd_cd, p.div, p.STD_YYYYMM, 
-                     CASE WHEN b.fr_or_cls = 'HQ' THEN 'OR' ELSE b.fr_or_cls END, 
-                     ${productType === "scs" ? "a.prdt_scs_cd" : "a.prdt_cd"}, a.prdt_cd, i.item_std, i.sesn
+                     CASE 
+                       WHEN b.fr_or_cls = 'HQ' THEN 'OR'
+                       WHEN b.fr_or_cls IS NULL THEN 'UNKNOWN'
+                       ELSE b.fr_or_cls 
+                     END, 
+                     a.prdt_cd, a.color_cd, a.size_cd, a.prdt_scs_cd, i.item_std, i.sesn
         )
         , BASE AS (
             SELECT  
-                  a.yyyymm                  AS yyyymm
-                , a.brd_cd                  AS brd_cd
-                , a.channel                 AS channel
-                , a.item_std                AS item_std
-                , a.product_key             AS prdt_scs_cd
-                , COALESCE(b.sesn, i.sesn)  AS sesn
-                , COALESCE(SUM(b.end_stock_tag_amt), 0)  AS end_stock_tag_amt
-                , COALESCE(SUM(b.end_stock_qty), 0)      AS end_stock_qty
-                , SUM(a.sale_amt)           AS sale_amt
-            FROM SALE_1M a
-            JOIN item i
-              ON a.prdt_cd = i.prdt_cd
-            LEFT JOIN STOCK b
-              ON a.brd_cd   = b.brd_cd
-             AND a.div      = b.div
-             AND a.channel  = b.channel
-             AND a.product_key  = b.product_key
-             AND a.yyyymm   = b.yyyymm
-             AND a.item_std = b.item_std
-             AND i.sesn = b.sesn
+                  b.yyyymm                  AS yyyymm
+                , b.brd_cd                  AS brd_cd
+                , b.channel                 AS channel
+                , b.item_std                AS item_std
+                , CASE
+                    WHEN '${productType}' = 'cd' THEN b.prdt_cd
+                    WHEN '${productType}' = 'color' THEN b.color_cd
+                    WHEN '${productType}' = 'size' THEN b.size_cd
+                    WHEN '${productType}' = 'color_size' THEN CONCAT(b.color_cd, '-', b.size_cd)
+                    WHEN '${productType}' = 'scs' THEN b.prdt_scs_cd
+                    ELSE b.prdt_cd
+                  END AS prdt_scs_cd
+                , b.sesn                    AS sesn
+                , SUM(b.end_stock_tag_amt)  AS end_stock_tag_amt
+                , SUM(b.end_stock_qty)      AS end_stock_qty
+                , COALESCE(SUM(a.sale_amt), 0) AS sale_amt
+            FROM STOCK b
+            LEFT JOIN SALE_1M a
+              ON b.brd_cd   = a.brd_cd
+             AND b.div      = a.div
+             AND b.channel  = a.channel
+             AND b.prdt_cd  = a.prdt_cd
+             AND b.color_cd = a.color_cd
+             AND b.size_cd = a.size_cd
+             AND b.yyyymm   = a.yyyymm
+             AND b.item_std = a.item_std
             JOIN item_seq s
-              ON a.item_std = s.item_std
-            WHERE a.div = 'CY'
-              AND a.item_std IN ('신발', '모자', '가방', '기타')
-            GROUP BY a.yyyymm, a.brd_cd, a.channel, a.item_std, s.seq, a.product_key, COALESCE(b.sesn, i.sesn)
+              ON b.item_std = s.item_std
+            WHERE b.div = 'CY'
+              AND b.item_std IN ('신발', '모자', '가방', '기타')
+            GROUP BY b.yyyymm, b.brd_cd, b.channel, b.item_std, s.seq, 
+                     CASE
+                       WHEN '${productType}' = 'cd' THEN b.prdt_cd
+                       WHEN '${productType}' = 'color' THEN b.color_cd
+                       WHEN '${productType}' = 'size' THEN b.size_cd
+                       WHEN '${productType}' = 'color_size' THEN CONCAT(b.color_cd, '-', b.size_cd)
+                       WHEN '${productType}' = 'scs' THEN b.prdt_scs_cd
+                       ELSE b.prdt_cd
+                     END, 
+                     b.sesn
         )
         , RATIO AS (
             SELECT
